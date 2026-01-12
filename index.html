@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>智慧連線倉庫管理系統</title>
+    
+    <!-- 1. 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 2. 載入 Babel 用於解析 JSX (與 ESM 配合) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* 隱藏捲軸但保留功能 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        
+        /* 動畫效果定義 */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .animate-in {
+            animation: fadeIn 0.3s ease-out forwards;
+        }
+        
+        /* 防止 iOS safari 點擊時的閃爍 */
+        * {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Toggle Switch */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #4F46E5;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #4F46E5;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans overscroll-none">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useMemo, useEffect } from 'https://esm.sh/react@18.2.0?dev';
+        import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client?dev';
+        import { 
+            LayoutDashboard, 
+            Package, 
+            ShoppingCart, 
+            Users, 
+            Zap, 
+            Plus, 
+            ArrowRight, 
+            AlertCircle, 
+            CheckCircle2, 
+            Combine, 
+            Split, 
+            MessageCircle, 
+            Truck, 
+            DollarSign, 
+            Search, 
+            Filter, 
+            X, 
+            ChevronRight, 
+            ChevronUp,
+            ClipboardList, 
+            User, 
+            ShoppingBag, 
+            ListOrdered, 
+            Tag, 
+            Layers, 
+            Archive, 
+            CheckSquare, 
+            Square, 
+            Trash2, 
+            Edit, 
+            Save,
+            Copy,
+            CreditCard,
+            RotateCcw,
+            Minus
+        } from 'https://esm.sh/lucide-react@0.263.1?dev';
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('products');
+            const [showProxyOrder, setShowProxyOrder] = useState(false);
+            const [showPurchaseList, setShowPurchaseList] = useState(false);
+            const [showDebtList, setShowDebtList] = useState(false);
+            
+            // 詳情彈窗狀態
+            const [selectedGroupName, setSelectedGroupName] = useState(null); 
+            const [selectedCustomerDetail, setSelectedCustomerDetail] = useState(null);
+            
+            // 編輯與收款模式狀態
+            const [isEditingProduct, setIsEditingProduct] = useState(false);
+            const [showPaymentInput, setShowPaymentInput] = useState(false);
+            const [paymentAmount, setPaymentAmount] = useState('');
+            
+            // 編輯數量狀態 (訂單ID-商品ID)
+            const [editingOrderQtyId, setEditingOrderQtyId] = useState(null);
+
+            // 代客加單表單狀態
+            const [proxyForm, setProxyForm] = useState({
+                productName: '',
+                variant: '', 
+                price: '',
+                customer: '',
+                qty: 1,
+                purchasedQty: 0
+            });
+
+            const [notification, setNotification] = useState(null);
+            const [searchQuery, setSearchQuery] = useState('');
+
+            // 1. 狀態管理：庫存
+            const [products, setProducts] = useState([
+                { id: 'A1', name: '日本極致吹風機', variant: '珍珠白', spot: 2, price: 3200, tierMinQty: 0, tierPrice: 0 },
+                { id: 'A2', name: '日本極致吹風機', variant: '消光黑', spot: 3, price: 3200, tierMinQty: 0, tierPrice: 0 },
+                { id: 'B2', name: '法式黑巧克力盒', variant: '單一款式', spot: 20, price: 450, tierMinQty: 2, tierPrice: 400 },
+                { id: 'C3', name: '韓國限定運動鞋', variant: '24cm', spot: 0, price: 2800, tierMinQty: 0, tierPrice: 0 },
+                { id: 'D4', name: '膠原蛋白粉', variant: '罐裝', spot: 30, price: 980, tierMinQty: 3, tierPrice: 900 },
+                { id: 'E5', name: '環保購物袋', variant: '藍色', spot: 2, price: 150, tierMinQty: 0, tierPrice: 0 },
+            ]);
+
+            // 2. 狀態管理：訂單
+            const [orders, setOrders] = useState([
+                { id: 'ORD001', customer: '林小美', total: 6400, paid: 3200, status: '部分到貨', items: [{ productId: 'A1', name: '日本極致吹風機', variant: '珍珠白', qty: 2, price: 3200, isAllocated: true }], debt: 3200, unclaimed: 1 },
+                { id: 'ORD002', customer: '王大同', total: 450, paid: 0, status: '待結單', items: [{ productId: 'B2', name: '法式黑巧克力盒', variant: '單一款式', qty: 1, price: 450, isAllocated: false }], debt: 450, unclaimed: 0 },
+                { id: 'ORD003', customer: '張雅婷', total: 5600, paid: 5600, status: '待出貨', items: [{ productId: 'C3', name: '韓國限定運動鞋', variant: '24cm', qty: 2, price: 2800, isAllocated: false }], debt: 0, unclaimed: 2 },
+            ]);
+
+            const notify = (msg) => {
+                setNotification(msg);
+                setTimeout(() => setNotification(null), 3000);
+            };
+
+            // 核心修復：編輯訂單商品數量 (同步更新總額、欠款、現貨)
+            const handleUpdateOrderQty = (orderId, productId, newQtyStr) => {
+                const newQty = parseInt(newQtyStr, 10);
+                if (isNaN(newQty) || newQty < 0) return;
+
+                // 1. 查找舊資料以計算差異
+                const targetOrder = orders.find(o => o.id === orderId);
+                const targetItem = targetOrder?.items.find(i => i.productId === productId);
+                if (!targetItem) return;
+
+                const qtyDiff = newQty - targetItem.qty; // 正數代表增加，負數代表減少
+
+                // 2. 更新訂單 (數量、總額、欠款)
+                setOrders(prev => prev.map(o => {
+                    if (o.id === orderId) {
+                        const newItems = o.items.map(item => {
+                            if (item.productId === productId) {
+                                return { ...item, qty: newQty };
+                            }
+                            return item;
+                        }).filter(item => item.qty > 0);
+
+                        // 重新計算總額 (保持簡單累加，不處理多件優惠的動態顯示，多件優惠由 customerList 處理)
+                        const newTotal = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+                        const newDebt = Math.max(0, newTotal - o.paid);
+
+                        return { ...o, items: newItems, total: newTotal, debt: newDebt };
+                    }
+                    return o;
+                }));
+
+                // 3. 更新現貨 (如果該項目已配貨，則需要同步調整現貨)
+                // 邏輯：數量增加 -> 現貨減少；數量減少 -> 現貨增加
+                if (targetItem.isAllocated) {
+                    setProducts(prev => prev.map(p => {
+                        if (p.id === productId) {
+                            return { ...p, spot: p.spot - qtyDiff };
+                        }
+                        return p;
+                    }));
+                }
+
+                setEditingOrderQtyId(null);
+                notify("數量已更新，金額與庫存已同步");
+            };
+
+            // 核心修復：刪除訂單中的單項商品 (記帳軟體邏輯：確認 -> 查找 -> 回滾庫存 -> 移除)
+            const handleDeleteOrderItem = (orderId, productId) => {
+                if(!window.confirm('確定要刪除這筆商品嗎？\n刪除後，相關金額將重新計算，若已配貨將自動釋放庫存。')) return;
+
+                // 1. 查找要刪除的項目
+                const targetOrder = orders.find(o => o.id === orderId);
+                const itemToRemove = targetOrder?.items.find(i => i.productId === productId);
+                
+                if (!targetOrder || !itemToRemove) return;
+
+                // 2. 回滾庫存 (如果已配貨，將數量加回現貨)
+                if (itemToRemove.isAllocated) {
+                    setProducts(prev => prev.map(p => {
+                        if (p.id === productId) {
+                            return { ...p, spot: p.spot + itemToRemove.qty };
+                        }
+                        return p;
+                    }));
+                }
+
+                // 3. 移除項目並更新訂單
+                setOrders(prev => prev.map(o => {
+                    if (o.id === orderId) {
+                        const newItems = o.items.filter(i => i.productId !== productId);
+                        
+                        // 重新計算總額
+                        const newTotal = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+                        const newDebt = Math.max(0, newTotal - o.paid);
+
+                        return { ...o, items: newItems, total: newTotal, debt: newDebt };
+                    }
+                    return o;
+                }).filter(o => o.items.length > 0)); // 若訂單沒商品了，移除整筆訂單
+
+                notify("已刪除該筆商品");
+            };
+
+            const handleUpdateProductInfo = (productId, field, value) => {
+                const val = parseInt(value, 10);
+                if (isNaN(val)) return;
+
+                const targetProduct = products.find(p => p.id === productId);
+                const targetName = targetProduct ? targetProduct.name : '';
+
+                setProducts(prev => prev.map(p => {
+                    if ((field === 'tierMinQty' || field === 'tierPrice') && p.name === targetName) {
+                        return { ...p, [field]: val };
+                    }
+                    if (p.id === productId) {
+                        return { ...p, [field]: val };
+                    }
+                    return p;
+                }));
+            };
+
+            const handleDeleteProductGroup = (groupName, e) => {
+                e.stopPropagation();
+                if (window.confirm(`⚠️ 刪除警告\n\n確定要刪除商品「${groupName}」及其所有款式嗎？\n此動作無法復原。`)) {
+                    setProducts(prev => prev.filter(p => p.name !== groupName));
+                    if (selectedGroupName === groupName) {
+                        setSelectedGroupName(null);
+                    }
+                    notify(`已刪除商品：${groupName}`);
+                }
+            };
+
+            const handleDeleteProduct = (productId) => {
+                if(window.confirm('確定要刪除此款式嗎？')) {
+                    setProducts(prev => prev.filter(p => p.id !== productId));
+                    notify("已刪除商品款式");
+                }
+            };
+
+            const handleDeleteCustomer = (customerName, e) => {
+                e.stopPropagation();
+                if (window.confirm(`⚠️ 刪除警告\n\n確定要刪除顧客「${customerName}」的所有資料嗎？\n這將會刪除該顧客的所有訂單紀錄。`)) {
+                    setOrders(prev => prev.filter(o => o.customer !== customerName));
+                    if (selectedCustomerDetail?.name === customerName) {
+                        setSelectedCustomerDetail(null);
+                    }
+                    notify(`已刪除顧客：${customerName}`);
+                }
+            };
+
+            const customerList = useMemo(() => {
+                const map = {};
+                
+                orders.forEach(o => {
+                    if (!map[o.customer]) {
+                        map[o.customer] = { 
+                            name: o.customer, 
+                            totalSpent: 0, 
+                            totalPaid: 0,
+                            orderCount: 0, 
+                            debt: 0, 
+                            items: [],
+                            rawItems: []
+                        };
+                    }
+                    map[o.customer].totalPaid += o.paid;
+                    map[o.customer].orderCount += 1;
+                    
+                    o.items.forEach(item => {
+                        map[o.customer].rawItems.push({
+                            ...item,
+                            orderId: o.id
+                        });
+                    });
+                });
+
+                Object.values(map).forEach(cust => {
+                    const nameCounts = {};
+                    cust.rawItems.forEach(item => {
+                        const productInfo = products.find(p => p.id === item.productId);
+                        const productName = productInfo ? productInfo.name : item.name;
+                        
+                        if (!nameCounts[productName]) {
+                            nameCounts[productName] = 0;
+                        }
+                        nameCounts[productName] += item.qty;
+                    });
+
+                    cust.rawItems.forEach(item => {
+                        const productInfo = products.find(p => p.id === item.productId);
+                        const productName = productInfo ? productInfo.name : item.name;
+                        
+                        let finalPrice = item.price;
+                        let originalPrice = item.price;
+                        let tierMinQty = 0;
+                        let tierPrice = 0;
+
+                        if (productInfo) {
+                            originalPrice = productInfo.price;
+                            tierMinQty = productInfo.tierMinQty;
+                            tierPrice = productInfo.tierPrice;
+                        }
+
+                        if (tierMinQty > 0 && nameCounts[productName] >= tierMinQty) {
+                            finalPrice = tierPrice;
+                        }
+
+                        const itemTotal = item.qty * finalPrice;
+                        
+                        cust.items.push({
+                            ...item,
+                            finalPrice: finalPrice,
+                            isDiscounted: finalPrice < originalPrice,
+                            itemTotal: itemTotal
+                        });
+                        cust.totalSpent += itemTotal;
+                    });
+
+                    cust.debt = Math.max(0, cust.totalSpent - cust.totalPaid);
+                });
+
+                return Object.values(map);
+            }, [orders, products]);
+
+            const handleCustomerPayment = () => {
+                const amount = parseInt(paymentAmount, 10);
+                if (isNaN(amount) || amount === 0) {
+                    notify("請輸入有效的收款金額");
+                    return;
+                }
+
+                if (!selectedCustomerDetail) return;
+
+                const customerName = selectedCustomerDetail.name;
+                
+                setOrders(prevOrders => {
+                    let remaining = Math.abs(amount);
+                    const isRefund = amount < 0;
+                    
+                    return prevOrders.map(order => {
+                        if (order.customer !== customerName || remaining <= 0) return order;
+
+                        if (!isRefund && order.debt > 0) {
+                            const payAmount = Math.min(order.debt, remaining);
+                            remaining -= payAmount;
+                            return { ...order, paid: order.paid + payAmount, debt: order.debt - payAmount };
+                        } else if (isRefund && order.paid > 0) {
+                            const refundAmount = Math.min(order.paid, remaining);
+                            remaining -= refundAmount;
+                            return { ...order, paid: order.paid - refundAmount, debt: order.debt + refundAmount };
+                        }
+                        return order;
+                    });
+                });
+
+                setPaymentAmount('');
+                setShowPaymentInput(false);
+                notify(amount > 0 ? `已收款 $${amount}` : `已退款 $${Math.abs(amount)}`);
+            };
+
+            const handleCopyCustomerDetails = (customer) => {
+                let itemsText = '';
+                customer.items.forEach(item => {
+                    const priceDisplay = item.isDiscounted ? `$${item.finalPrice} (優惠)` : `$${item.finalPrice}`;
+                    itemsText += `- ${item.name} ${item.variant !== '單一款式' && item.variant ? `(${item.variant})` : ''} x${item.qty} ${priceDisplay}\n`;
+                });
+
+                const text = `親愛的 ${customer.name} 您好，
+您本次的連線購物明細如下：
+${itemsText}----------------
+消費總額：$${customer.totalSpent.toLocaleString()}
+
+可以先幫我搭波卻可
+有誤的話～請趕快跟我說！
+₊⊹ 若是沒有漏掉的商品 ₊⊹
+就可以直接結帳囉！
+網址：（這裡留給我自己輸入網址）
+找到自己名字後完成下單就可以嚕
+𐙚 收到所有連結後請盡速完成付款
+   不要耽誤到最佳的賞味期限唷
+
+⚝ p.s. 前一次連線有開箱分享的朋友~
+下單後請幫我備註一下：開箱禮
+𝐭𝐡𝐚𝐧𝐤 𝐲𝐨𝐮 („• ֊ •„)੭`;
+
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    notify("已複製通知文案！");
+                } catch (err) {
+                    console.error('複製失敗', err);
+                    notify("複製失敗，請手動複製");
+                }
+                document.body.removeChild(textArea);
+            };
+
+            const productsWithStats = useMemo(() => {
+                return products.map(p => {
+                    let allocated = 0; 
+                    let confirmed = 0; 
+
+                    orders.forEach(o => {
+                        o.items.forEach(item => {
+                            if (item.productId === p.id) {
+                                allocated += item.qty;
+                                if (item.isAllocated) {
+                                    confirmed += item.qty;
+                                }
+                            }
+                        });
+                    });
+
+                    const pending = allocated - confirmed;
+                    const totalOwned = p.spot + confirmed;
+                    const shortage = Math.max(0, allocated - totalOwned);
+
+                    return {
+                        ...p,
+                        allocated, 
+                        confirmed, 
+                        pending,   
+                        shortage   
+                    };
+                });
+            }, [products, orders]);
+
+            const navigateTo = (tab) => {
+                setActiveTab(tab);
+                setSearchQuery('');
+            };
+
+            const handleProxyProductChange = (e) => {
+                const name = e.target.value;
+                const existing = products.find(p => p.name === name);
+                setProxyForm(prev => ({
+                    ...prev,
+                    productName: name,
+                    price: existing ? existing.price : prev.price
+                }));
+            };
+
+            const availableVariants = useMemo(() => {
+                if (!proxyForm.productName) return [];
+                return [...new Set(products
+                    .filter(p => p.name === proxyForm.productName)
+                    .map(p => p.variant))];
+            }, [products, proxyForm.productName]);
+
+            const handleAddOrder = () => {
+                const { productName, variant, price, customer, qty, purchasedQty } = proxyForm;
+                const finalVariant = variant || '單一款式';
+
+                if (!productName || !price) {
+                    notify('商品名稱與價格為必填');
+                    return;
+                }
+
+                const quantity = parseInt(qty, 10) || 1;
+                const purchasedQuantity = parseInt(purchasedQty, 10) || 0;
+                const finalPrice = parseInt(price, 10) || 0;
+
+                let targetProduct = products.find(p => p.name === productName && p.variant === finalVariant);
+                let isNewProduct = false;
+                let targetId = targetProduct?.id;
+
+                if (!targetProduct) {
+                    isNewProduct = true;
+                    targetId = `N${Math.floor(Math.random() * 10000)}`;
+                    targetProduct = {
+                        id: targetId,
+                        name: productName,
+                        variant: finalVariant,
+                        price: finalPrice,
+                        spot: 0,
+                        tierMinQty: 0,
+                        tierPrice: 0
+                    };
+                }
+
+                setProducts(prev => {
+                    if (isNewProduct) {
+                        return [{ ...targetProduct, spot: purchasedQuantity }, ...prev];
+                    } else {
+                        return prev.map(p => 
+                            p.id === targetId ? { ...p, spot: p.spot + purchasedQuantity } : p
+                        );
+                    }
+                });
+
+                if (customer) {
+                    const newOrder = {
+                        id: `ORD${Math.floor(Math.random() * 10000)}`,
+                        customer: customer,
+                        total: finalPrice * quantity, 
+                        paid: 0,
+                        status: '待結單',
+                        items: [{ 
+                            productId: targetId, 
+                            name: productName, 
+                            variant: finalVariant, 
+                            qty: quantity, 
+                            price: finalPrice, 
+                            isAllocated: false 
+                        }],
+                        debt: 0, 
+                        unclaimed: 0
+                    };
+                    setOrders(prev => [newOrder, ...prev]);
+                    notify(`加單成功 (待排)：${productName}`);
+                } else {
+                    notify(`已入庫：${productName} x${purchasedQuantity}`);
+                }
+                
+                setShowProxyOrder(false);
+                setProxyForm({ productName: '', variant: '', price: '', customer: '', qty: 1, purchasedQty: 0 });
+            };
+
+            const toggleAllocation = (orderId, productId, currentStatus) => {
+                const newStatus = !currentStatus;
+                const order = orders.find(o => o.id === orderId);
+                const item = order ? order.items.find(i => i.productId === productId) : null;
+                const qty = item ? item.qty : 0;
+                const product = products.find(p => p.id === productId);
+
+                if (newStatus && product.spot < qty) {
+                    notify("⚠️ 注意：現貨不足，將扣為負數");
+                }
+
+                setOrders(prev => prev.map(o => {
+                    if (o.id === orderId) {
+                        const newItems = o.items.map(item => {
+                            if (item.productId === productId) return { ...item, isAllocated: newStatus };
+                            return item;
+                        });
+                        return { ...o, items: newItems };
+                    }
+                    return o;
+                }));
+
+                setProducts(prev => prev.map(p => {
+                    if (p.id === productId) {
+                        const newSpot = newStatus ? p.spot - qty : p.spot + qty;
+                        return { ...p, spot: newSpot };
+                    }
+                    return p;
+                }));
+            };
+
+            const stats = useMemo(() => {
+                const totalDebt = customerList.reduce((acc, curr) => acc + curr.debt, 0);
+                let shortageItemCount = 0; 
+                let totalShortageQty = 0;  
+
+                productsWithStats.forEach(p => {
+                    if (p.shortage > 0) {
+                        shortageItemCount += 1;
+                        totalShortageQty += p.shortage;
+                    }
+                });
+
+                return {
+                    totalDebt,
+                    shortageItemCount,
+                    totalShortageQty,
+                    pendingShipment: orders.filter(o => o.status === '待出貨').length
+                };
+            }, [orders, productsWithStats, customerList]); 
+
+            const purchaseList = useMemo(() => {
+                return productsWithStats
+                    .filter(p => p.shortage > 0)
+                    .map(p => ({ ...p }));
+            }, [productsWithStats]);
+
+            const groupedProducts = useMemo(() => {
+                const groups = {};
+                productsWithStats.forEach(p => {
+                    if (!groups[p.name]) {
+                        groups[p.name] = {
+                            name: p.name,
+                            price: p.price,
+                            totalAllocated: 0,
+                            totalConfirmed: 0,
+                            totalPending: 0,
+                            totalSpot: 0,
+                            variants: []
+                        };
+                    }
+                    groups[p.name].totalAllocated += p.allocated;
+                    groups[p.name].totalConfirmed += p.confirmed;
+                    groups[p.name].totalPending += p.pending;
+                    groups[p.name].totalSpot += p.spot;
+                    groups[p.name].variants.push(p);
+                });
+                return Object.values(groups);
+            }, [productsWithStats]);
+
+            const getGroupAllocations = (groupName) => {
+                const variants = products.filter(p => p.name === groupName);
+                const result = [];
+                variants.forEach(variant => {
+                    orders.forEach(o => {
+                        o.items.forEach(item => {
+                            if (item.productId === variant.id) {
+                                result.push({
+                                    orderId: o.id,
+                                    productId: variant.id,
+                                    customer: o.customer,
+                                    qty: item.qty,
+                                    variant: variant.variant,
+                                    isAllocated: item.isAllocated
+                                });
+                            }
+                        });
+                    });
+                });
+                return result;
+            };
+
+            const debtCustomers = useMemo(() => {
+                return customerList.filter(c => c.debt > 0);
+            }, [customerList]);
+
+            const filteredGroupedProducts = groupedProducts.filter(g => g.name.includes(searchQuery));
+            const filteredCustomers = customerList.filter(c => c.name.includes(searchQuery));
+            const filteredOrders = orders.filter(o => o.customer.includes(searchQuery) || o.id.includes(searchQuery));
+
+            const unsettledOrders = filteredOrders.filter(o => o.status !== '待出貨');
+            const settledOrders = filteredOrders.filter(o => o.status === '待出貨');
+
+            const handleCheckout = (orderId) => {
+                setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: '待出貨', paid: o.total, debt: 0 } : o));
+                notify("結單成功！訂單已移至「已結單」區塊");
+            };
+
+            const currentSelectedCustomer = selectedCustomerDetail 
+                ? customerList.find(c => c.name === selectedCustomerDetail.name) || selectedCustomerDetail
+                : null;
+
+            return (
+                <div className="min-h-screen pb-24 select-none">
+                    {/* 通知 */}
+                    {notification && (
+                        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[200] bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 animate-bounce transition-all">
+                            <CheckCircle2 size={18} className="text-green-400" />
+                            {notification}
+                        </div>
+                    )}
+
+                    {/* Header */}
+                    <div className="bg-indigo-600 text-white p-4 shadow-lg sticky top-0 z-50">
+                        <div className="flex justify-between items-center max-w-2xl mx-auto">
+                            <h1 className="text-xl font-bold flex items-center gap-2 cursor-pointer" onClick={() => navigateTo('dashboard')}>
+                                <Zap className="fill-yellow-400 text-yellow-400" /> Smart WMS
+                            </h1>
+                            <div className="bg-indigo-500/50 px-3 py-1 rounded-full text-[10px] font-bold tracking-wider flex items-center gap-1">
+                                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                                連線中
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Nav */}
+                    <div className="bg-white border-b sticky top-[60px] z-40">
+                        <div className="flex max-w-2xl mx-auto overflow-x-auto no-scrollbar">
+                            {[
+                                { id: 'products', label: '商品列表', icon: ShoppingBag },
+                                { id: 'dashboard', label: '狀態', icon: LayoutDashboard },
+                                { id: 'customers', label: '顧客列表', icon: Users },
+                                { id: 'orders', label: '訂單管理', icon: ListOrdered },
+                            ].map(item => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => navigateTo(item.id)}
+                                    className={`flex-1 py-4 px-2 flex flex-col items-center gap-1 text-[10px] font-bold transition-all whitespace-nowrap
+                                        ${activeTab === item.id ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/50' : 'text-slate-400 opacity-70'}`}
+                                >
+                                    <item.icon size={18} />
+                                    {item.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Main Content */}
+                    <main className="max-w-2xl mx-auto p-4 space-y-4">
+                        {/* 搜尋欄位 */}
+                        {activeTab !== 'dashboard' && (
+                            <div className="relative animate-in">
+                                <input 
+                                    type="text" 
+                                    placeholder={`搜尋...`} 
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="w-full bg-white border-none rounded-2xl p-4 pl-12 shadow-sm focus:ring-2 focus:ring-indigo-500 transition-all text-sm outline-none"
+                                />
+                                <Search size={18} className="absolute left-4 top-4 text-slate-300" />
+                                {searchQuery && <X size={18} className="absolute right-4 top-4 text-slate-300 cursor-pointer" onClick={() => setSearchQuery('')} />}
+                            </div>
+                        )}
+
+                        {/* View 1: 商品列表 */}
+                        {activeTab === 'products' && (
+                            <div className="space-y-3 pb-20">
+                                {filteredGroupedProducts.map(g => {
+                                    const totalOwned = g.totalSpot + g.totalConfirmed;
+                                    const shortage = Math.max(0, g.totalAllocated - totalOwned);
+                                    
+                                    return (
+                                        <div 
+                                            key={g.name} 
+                                            onClick={() => { setSelectedGroupName(g.name); setIsEditingProduct(false); }}
+                                            className="bg-white rounded-3xl p-4 flex justify-between items-center shadow-sm border border-slate-100 hover:border-indigo-300 transition-all cursor-pointer active:scale-98 relative overflow-hidden"
+                                        >
+                                            {shortage > 0 && <div className="absolute left-0 top-0 bottom-0 w-1 bg-rose-500"></div>}
+                                            <div className="flex-1 pl-2">
+                                                <div className="flex justify-between items-start mb-1">
+                                                    <div>
+                                                        <h4 className="font-black text-slate-800 text-lg">{g.name}</h4>
+                                                        <span className="bg-slate-100 text-slate-500 text-[10px] px-2 py-0.5 rounded-full font-bold">{g.variants.length} 款式</span>
+                                                    </div>
+                                                    <div className="flex items-start gap-3">
+                                                        <div className="text-right">
+                                                            <span className="block text-lg font-black text-slate-700">${g.price}</span>
+                                                            <span className="text-[10px] text-slate-400">單價</span>
+                                                        </div>
+                                                        <button 
+                                                            onClick={(e) => handleDeleteProductGroup(g.name, e)}
+                                                            className="text-slate-300 hover:text-rose-500 p-3 -mr-2"
+                                                        >
+                                                            <Trash2 size={20} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-4 items-center mt-2 border-t border-slate-50 pt-2">
+                                                    <div className="text-xs">
+                                                        <span className="text-slate-400">總喊單 </span>
+                                                        <span className="font-bold text-slate-800 text-lg">{g.totalAllocated}</span>
+                                                    </div>
+                                                    <div className="text-xs">
+                                                        <span className="text-slate-400">已配 </span>
+                                                        <span className={`font-bold text-lg ${g.totalConfirmed > 0 ? 'text-indigo-600' : 'text-slate-300'}`}>{g.totalConfirmed}</span>
+                                                    </div>
+                                                    <div className="text-xs">
+                                                        <span className="text-slate-400">總現貨 </span>
+                                                        <span className={`font-bold text-lg ${g.totalSpot < 0 ? 'text-rose-500' : 'text-slate-800'}`}>{g.totalSpot}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* View 2: Dashboard */}
+                        {activeTab === 'dashboard' && (
+                            <div className="space-y-4 animate-in pb-20">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div 
+                                        onClick={() => setShowPurchaseList(true)}
+                                        className="bg-rose-500 text-white p-4 rounded-3xl shadow-lg shadow-rose-100 relative overflow-hidden cursor-pointer active:scale-95 transition-all"
+                                    >
+                                        <p className="text-[10px] font-bold opacity-80 relative z-10">需補貨統計</p>
+                                        <div className="mt-1 relative z-10">
+                                            <p className="text-3xl font-black">{stats.shortageItemCount} <span className="text-sm font-bold opacity-80">款</span></p>
+                                            <p className="text-xs opacity-90 mt-1 font-bold">共缺 {stats.totalShortageQty} 件</p>
+                                        </div>
+                                        <div className="mt-3 text-[10px] flex items-center gap-1 bg-white/20 w-fit px-2 py-1 rounded-full relative z-10 backdrop-blur-sm">
+                                            查看清單 <ArrowRight size={10} />
+                                        </div>
+                                        <div className="absolute -right-4 -bottom-4 bg-white/10 w-24 h-24 rounded-full blur-2xl"></div>
+                                    </div>
+                                    <div 
+                                        onClick={() => setShowDebtList(true)}
+                                        className="bg-amber-500 text-white p-4 rounded-3xl shadow-lg shadow-amber-100 cursor-pointer active:scale-95 transition-all relative overflow-hidden"
+                                    >
+                                        <p className="text-[10px] font-bold opacity-80 relative z-10">總待收帳款</p>
+                                        <p className="text-3xl font-black relative z-10 mt-1">${stats.totalDebt.toLocaleString()}</p>
+                                        <p className="text-[10px] opacity-80 mt-2 relative z-10 flex items-center gap-1">點擊查看詳情 <ChevronRight size={10}/></p>
+                                        <div className="absolute -right-4 -bottom-4 bg-white/10 w-24 h-24 rounded-full blur-2xl"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* View 3: 顧客列表 */}
+                        {activeTab === 'customers' && (
+                            <div className="space-y-3 pb-20">
+                                {filteredCustomers.map((cust, idx) => (
+                                    <div key={idx} onClick={() => setSelectedCustomerDetail(cust)} className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 flex justify-between items-center cursor-pointer active:scale-98">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-bold text-sm">{cust.name.charAt(0)}</div>
+                                            <div>
+                                                <h4 className="font-black text-slate-800">{cust.name}</h4>
+                                                <p className="text-[10px] text-slate-400 font-bold">{cust.orderCount} 筆訂單</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="text-right">
+                                                <p className="text-lg font-black text-indigo-600">${cust.totalSpent.toLocaleString()}</p>
+                                            </div>
+                                            <button 
+                                                onClick={(e) => handleDeleteCustomer(cust.name, e)}
+                                                className="text-slate-300 hover:text-rose-500 p-3 -mr-2"
+                                            >
+                                                <Trash2 size={20} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* View 4: 訂單管理 */}
+                        {activeTab === 'orders' && (
+                            <div className="space-y-6 pb-24">
+                                <div>
+                                    <div className="flex items-center gap-2 mb-3 px-2">
+                                        <ClipboardList size={20} className="text-indigo-600" />
+                                        <h3 className="text-lg font-black text-slate-800">未結單 ({unsettledOrders.length})</h3>
+                                    </div>
+                                    <div className="space-y-4">
+                                        {unsettledOrders.length === 0 ? (
+                                            <div className="text-center p-8 bg-white rounded-3xl border border-dashed border-slate-200 text-slate-400 text-sm">
+                                                目前沒有未處理訂單
+                                            </div>
+                                        ) : (
+                                            unsettledOrders.map(o => (
+                                                <div key={o.id} className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
+                                                    <div className="mb-2 flex justify-between">
+                                                        <h4 className="font-black text-lg text-slate-800">{o.customer}</h4>
+                                                        <span className="text-xs bg-amber-50 text-amber-600 px-2 py-1 rounded-full font-bold">{o.status}</span>
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        {o.items.map((item, idx) => (
+                                                            <div key={idx} className="flex justify-between items-center text-sm">
+                                                                <div className="flex items-center gap-2">
+                                                                    {item.isAllocated ? <CheckCircle2 size={14} className="text-emerald-500"/> : <AlertCircle size={14} className="text-slate-300"/>}
+                                                                    <span className="font-bold text-slate-700">{item.name} ({item.variant})</span>
+                                                                </div>
+                                                                <span className="font-mono text-slate-500">x{item.qty}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
+                                                        <span className="font-black text-slate-800">${o.total}</span>
+                                                        <button onClick={() => handleCheckout(o.id)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-indigo-200">代客結單</button>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                                {/* ... 已結單區塊 ... */}
+                            </div>
+                        )}
+                    </main>
+
+                    {/* Footer Quick Action */}
+                    <div className="fixed bottom-6 right-6 flex flex-col gap-4 z-[100]">
+                        <button 
+                            onClick={() => setShowPurchaseList(true)}
+                            className="w-12 h-12 bg-slate-800 text-white rounded-full shadow-xl shadow-slate-300 flex items-center justify-center active:scale-95 transition-all"
+                        >
+                            <Truck size={20} />
+                            {stats.outOfStockCount > 0 && <span className="absolute -top-1 -right-1 bg-rose-500 text-white w-5 h-5 rounded-full text-[10px] flex items-center justify-center border-2 border-white">{stats.outOfStockCount}</span>}
+                        </button>
+                        <button 
+                            onClick={() => setShowProxyOrder(true)}
+                            className="w-16 h-16 bg-indigo-600 text-white rounded-full shadow-2xl shadow-indigo-300 flex items-center justify-center active:scale-95 transition-all"
+                        >
+                            <Plus size={32} />
+                        </button>
+                    </div>
+
+                    {/* Modal: 代客加單 (z-index 200) */}
+                    {showProxyOrder && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[200] p-0 md:p-4 animate-in">
+                            <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl flex flex-col max-h-[90vh] md:max-h-[80vh]">
+                                <div className="p-5 border-b border-slate-100 flex justify-between items-center shrink-0">
+                                    <div>
+                                        <h3 className="font-black text-xl text-slate-800">代客加單 / 快速入庫</h3>
+                                        <p className="text-xs text-slate-400 font-bold">若不填顧客，則視為純入庫</p>
+                                    </div>
+                                    <button onClick={() => setShowProxyOrder(false)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:text-slate-700 active:scale-95"><X size={20} /></button>
+                                </div>
+                                <div className="p-5 space-y-4 overflow-y-auto no-scrollbar">
+                                    <datalist id="productSuggestions">
+                                        {[...new Set(products.map(p => p.name))].map(name => <option key={name} value={name} />)}
+                                    </datalist>
+                                    <datalist id="customerSuggestions">
+                                        {customerList.map(c => <option key={c.name} value={c.name} />)}
+                                    </datalist>
+                                    <datalist id="variantSuggestions">
+                                        {availableVariants.map(v => <option key={v} value={v} />)}
+                                    </datalist>
+
+                                    <div className="space-y-1">
+                                         <label className="text-xs font-bold text-slate-500 ml-1">商品名稱</label>
+                                         <input type="text" list="productSuggestions" placeholder="輸入商品名稱..." className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 pl-4 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300" value={proxyForm.productName} onChange={handleProxyProductChange} />
+                                    </div>
+                                    <div className="space-y-1">
+                                         <label className="text-xs font-bold text-slate-500 ml-1">款式 / 規格</label>
+                                         <input type="text" list="variantSuggestions" placeholder="例如：紅色、L號..." className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 pl-4 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300" value={proxyForm.variant} onChange={(e) => setProxyForm(prev => ({ ...prev, variant: e.target.value }))} />
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <div className="space-y-1 flex-1">
+                                            <label className="text-xs font-bold text-slate-500 ml-1">單價</label>
+                                            <input type="number" placeholder="0" className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 pl-4 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300" value={proxyForm.price} onChange={(e) => setProxyForm(prev => ({ ...prev, price: e.target.value }))} />
+                                        </div>
+                                        {proxyForm.customer && (
+                                            <div className="space-y-1 w-24 animate-in">
+                                                <label className="text-xs font-bold text-slate-500 ml-1">喊單量</label>
+                                                <input type="number" placeholder="1" className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-center text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300" value={proxyForm.qty} onChange={(e) => setProxyForm(prev => ({ ...prev, qty: e.target.value }))} />
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="space-y-1">
+                                         <label className="text-xs font-bold text-indigo-500 ml-1">購買數量 (填寫即入庫)</label>
+                                         <input type="number" placeholder="0" className="w-full bg-indigo-50 border border-indigo-100 rounded-2xl p-4 pl-4 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300" value={proxyForm.purchasedQty} onChange={(e) => setProxyForm(prev => ({ ...prev, purchasedQty: e.target.value }))} />
+                                    </div>
+                                    <div className="space-y-1">
+                                         <label className="text-xs font-bold text-slate-500 ml-1">顧客暱稱 (留空為純入庫)</label>
+                                         <input type="text" list="customerSuggestions" placeholder="輸入姓名..." className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 pl-4 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300" value={proxyForm.customer} onChange={(e) => setProxyForm(prev => ({ ...prev, customer: e.target.value }))} />
+                                    </div>
+                                    <div className="h-4"></div>
+                                </div>
+                                <div className="p-4 border-t border-slate-100 bg-white shrink-0 pb-8 md:pb-4">
+                                     <button onClick={handleAddOrder} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 shadow-lg shadow-indigo-200 active:scale-95 transition-all">
+                                        <Plus size={20} /> {proxyForm.customer ? '確認加單 (待排)' : '確認入庫'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Modal: 欠款清單 */}
+                    {showDebtList && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[150] p-0 md:p-4 animate-in">
+                            <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[85vh] flex flex-col">
+                                <div className="bg-amber-500 text-white p-6 relative overflow-hidden rounded-t-[30px] shrink-0">
+                                    <h3 className="text-2xl font-black relative z-10">欠款顧客清單</h3>
+                                    <p className="text-amber-100 text-xs font-bold relative z-10">點擊顧客查看詳情</p>
+                                    <button onClick={() => setShowDebtList(false)} className="absolute top-4 right-4 bg-white/10 p-2 rounded-full hover:bg-white/20"><X size={20}/></button>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar pb-20">
+                                    {debtCustomers.length === 0 ? (
+                                        <div className="text-center p-8 text-slate-400 text-sm">太棒了！目前沒有欠款顧客 🎉</div>
+                                    ) : (
+                                        debtCustomers.map((c, idx) => (
+                                            <div key={idx} onClick={() => { setShowDebtList(false); setSelectedCustomerDetail(c); }} className="bg-white rounded-2xl p-4 border border-slate-100 flex justify-between items-center shadow-sm cursor-pointer active:scale-98">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center font-bold text-sm">{c.name.charAt(0)}</div>
+                                                    <span className="font-bold text-slate-800">{c.name}</span>
+                                                </div>
+                                                <span className="font-black text-rose-500 text-lg">${c.debt.toLocaleString()}</span>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Modal: 商品詳情 (編輯模式 & 配單) */}
+                    {selectedGroupName && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[150] p-0 md:p-4 animate-in">
+                            <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[85vh] flex flex-col">
+                                <div className="p-6 bg-slate-800 text-white shrink-0 relative rounded-t-[30px] flex justify-between items-start">
+                                    <div>
+                                        <h3 className="text-xl font-black">{selectedGroupName}</h3>
+                                        <p className="text-slate-400 text-xs font-bold mt-1">手動配單模式</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setIsEditingProduct(!isEditingProduct)} className={`p-2 rounded-full ${isEditingProduct ? 'bg-indigo-500 text-white' : 'bg-white/10 text-slate-300'}`}>
+                                            <Edit size={18} />
+                                        </button>
+                                        <button onClick={() => setSelectedGroupName(null)} className="bg-white/10 p-2 rounded-full text-white"><X size={18}/></button>
+                                    </div>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar pb-20">
+                                    
+                                    {/* 1. 款式庫存表 (含多件優惠設定) */}
+                                    <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">款式庫存狀態</h4>
+                                            {isEditingProduct && <span className="text-[10px] text-indigo-600 font-bold">點擊數量修改</span>}
+                                        </div>
+                                        <table className="w-full text-xs font-bold">
+                                            <thead>
+                                                <tr className="text-slate-400 border-b border-slate-200">
+                                                    <th className="text-left pb-2">款式</th>
+                                                    <th className="text-center pb-2 text-indigo-500">已配</th>
+                                                    <th className="text-center pb-2 text-rose-500">待配</th>
+                                                    <th className="text-right pb-2 text-slate-800">現貨</th>
+                                                    {isEditingProduct && <th className="w-8"></th>}
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {productsWithStats.filter(p=>p.name===selectedGroupName).map(p => (
+                                                    <React.Fragment key={p.id}>
+                                                        <tr>
+                                                            <td className="py-3 text-slate-700">{p.variant}</td>
+                                                            <td className="py-3 text-center text-indigo-600">{p.confirmed}</td>
+                                                            <td className="py-3 text-center text-rose-500">{p.pending}</td>
+                                                            <td className="py-3 text-right">
+                                                                {isEditingProduct ? (
+                                                                    <input 
+                                                                        type="number" 
+                                                                        className="w-12 bg-white border border-indigo-200 rounded text-center p-1 text-slate-900"
+                                                                        defaultValue={p.spot}
+                                                                        onBlur={(e) => handleUpdateProductInfo(p.id, 'spot', e.target.value)}
+                                                                    />
+                                                                ) : (
+                                                                    <span className="text-slate-900">{p.spot}</span>
+                                                                )}
+                                                            </td>
+                                                            {isEditingProduct && (
+                                                                <td className="text-right">
+                                                                    <button onClick={() => handleDeleteProduct(p.id)} className="text-rose-400 p-1"><Trash2 size={14}/></button>
+                                                                </td>
+                                                            )}
+                                                        </tr>
+                                                        {/* 多件優惠設定區塊 (自動同步) */}
+                                                        {isEditingProduct && (
+                                                            <tr className="bg-indigo-50/50">
+                                                                <td colSpan="5" className="p-2">
+                                                                    <div className="flex items-center gap-2 text-[10px]">
+                                                                        <span className="font-bold text-indigo-600">多件優惠:</span>
+                                                                        <span>滿</span>
+                                                                        <input 
+                                                                            type="number" placeholder="件數" className="w-10 p-1 rounded border border-indigo-200 text-center"
+                                                                            defaultValue={p.tierMinQty}
+                                                                            onBlur={(e) => handleUpdateProductInfo(p.id, 'tierMinQty', e.target.value)}
+                                                                        />
+                                                                        <span>件，單價變</span>
+                                                                        <input 
+                                                                            type="number" placeholder="金額" className="w-14 p-1 rounded border border-indigo-200 text-center"
+                                                                            defaultValue={p.tierPrice}
+                                                                            onBlur={(e) => handleUpdateProductInfo(p.id, 'tierPrice', e.target.value)}
+                                                                        />
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                    </React.Fragment>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    {/* 2. 購買人配單開關 (維持原樣) */}
+                                    <div>
+                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">喊單明細 (點擊配單)</h4>
+                                        <div className="space-y-2">
+                                            {getGroupAllocations(selectedGroupName).length === 0 ? (
+                                                <p className="text-center text-slate-400 text-sm py-4">無資料</p>
+                                            ) : (
+                                                getGroupAllocations(selectedGroupName).map((record, idx) => (
+                                                    <div key={idx} className={`flex justify-between items-center p-3 border rounded-2xl shadow-sm transition-all ${record.isAllocated ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-100'}`}>
+                                                        <div className="flex items-center gap-3">
+                                                            <button 
+                                                                onClick={() => toggleAllocation(record.orderId, record.productId, record.isAllocated)}
+                                                                className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${record.isAllocated ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-transparent'}`}
+                                                            >
+                                                                <CheckSquare size={14} />
+                                                            </button>
+                                                            <div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="font-bold text-slate-700">{record.customer}</span>
+                                                                    <span className="text-[10px] bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded">{record.variant}</span>
+                                                                </div>
+                                                                <span className={`text-[10px] font-bold ${record.isAllocated ? 'text-indigo-600' : 'text-slate-400'}`}>
+                                                                    {record.isAllocated ? '已配到貨' : '待排單'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        {/* 右側：數量編輯與刪除 */}
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="flex items-center gap-1">
+                                                                {editingOrderQtyId === `${record.orderId}-${record.productId}` ? (
+                                                                    <input 
+                                                                        autoFocus
+                                                                        type="number"
+                                                                        className="w-10 bg-slate-100 border border-indigo-300 rounded text-center font-bold text-sm p-1 outline-none"
+                                                                        defaultValue={record.qty}
+                                                                        onBlur={(e) => handleUpdateOrderQty(record.orderId, record.productId, e.target.value)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') handleUpdateOrderQty(record.orderId, record.productId, e.target.value);
+                                                                        }}
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                    />
+                                                                ) : (
+                                                                    <span className="font-black text-slate-700 text-lg">x{record.qty}</span>
+                                                                )}
+                                                                
+                                                                <button 
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setEditingOrderQtyId(`${record.orderId}-${record.productId}`);
+                                                                    }}
+                                                                    className="text-slate-300 hover:text-indigo-600 p-1"
+                                                                >
+                                                                    <Edit size={14} />
+                                                                </button>
+                                                            </div>
+                                                            <button 
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleDeleteOrderItem(record.orderId, record.productId);
+                                                                }}
+                                                                className="text-slate-300 hover:text-rose-600 p-1 bg-slate-50 rounded-full"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Modal: 顧客詳情 (含編輯數量功能) */}
+                    {/* ... (同上，保持不變) ... */}
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
