@@ -45,7 +45,7 @@
         }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900 font-sans overscroll-none">
+<body class="bg-slate-50 text-slate-900 font-sans">
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
@@ -107,7 +107,10 @@
             const [isEditingProduct, setIsEditingProduct] = useState(false);
             const [showPaymentInput, setShowPaymentInput] = useState(false);
             const [paymentAmount, setPaymentAmount] = useState('');
+            
+            // 編輯數量狀態 ID (格式: orderId-productId)
             const [editingOrderQtyId, setEditingOrderQtyId] = useState(null);
+            const [editingAllocatedQtyId, setEditingAllocatedQtyId] = useState(null);
 
             // 代客加單表單狀態
             const [proxyForm, setProxyForm] = useState({
@@ -133,17 +136,42 @@
             ]);
 
             // 2. 狀態管理：訂單
-            // 注意：移除獨立的 isArrived，統一使用 isAllocated 代表「已配貨/已到貨」
+            // 使用 allocatedQty 代表 "已配貨/已到貨"
             const [orders, setOrders] = useState([
-                { id: 'ORD001', customer: '林小美', total: 6400, paid: 3200, status: '部分到貨', items: [{ productId: 'A1', name: '日本極致吹風機', variant: '珍珠白', qty: 2, price: 3200, isAllocated: true }], debt: 3200, unclaimed: 1 },
-                { id: 'ORD002', customer: '王大同', total: 450, paid: 0, status: '待結單', items: [{ productId: 'B2', name: '法式黑巧克力盒', variant: '單一款式', qty: 1, price: 450, isAllocated: false }], debt: 450, unclaimed: 0 },
-                { id: 'ORD003', customer: '張雅婷', total: 5600, paid: 5600, status: '待出貨', items: [{ productId: 'C3', name: '韓國限定運動鞋', variant: '24cm', qty: 2, price: 2800, isAllocated: false }], debt: 0, unclaimed: 2 },
+                { id: 'ORD001', customer: '林小美', total: 6400, paid: 3200, status: '部分到貨', items: [{ productId: 'A1', name: '日本極致吹風機', variant: '珍珠白', qty: 2, allocatedQty: 1, price: 3200 }], debt: 3200, unclaimed: 1 },
+                { id: 'ORD002', customer: '王大同', total: 450, paid: 0, status: '待結單', items: [{ productId: 'B2', name: '法式黑巧克力盒', variant: '單一款式', qty: 1, allocatedQty: 0, price: 450 }], debt: 450, unclaimed: 0 },
+                { id: 'ORD003', customer: '張雅婷', total: 5600, paid: 5600, status: '待出貨', items: [{ productId: 'C3', name: '韓國限定運動鞋', variant: '24cm', qty: 2, allocatedQty: 2, price: 2800 }], debt: 0, unclaimed: 2 },
             ]);
 
             const notify = (msg) => {
                 setNotification(msg);
                 setTimeout(() => setNotification(null), 3000);
             };
+
+            // --- 核心邏輯：動態計算商品統計數據 ---
+            const productsWithStats = useMemo(() => {
+                return products.map(p => {
+                    let allocated = 0; // 總喊單
+                    let confirmed = 0; // 已配單
+
+                    orders.forEach(o => {
+                        o.items.forEach(item => {
+                            if (item.productId === p.id) {
+                                allocated += item.qty;
+                                confirmed += (item.allocatedQty || 0);
+                            }
+                        });
+                    });
+
+                    const pending = allocated - confirmed;
+                    const totalOwned = p.spot + confirmed;
+                    const shortage = Math.max(0, allocated - totalOwned);
+
+                    return { ...p, allocated, confirmed, pending, shortage };
+                });
+            }, [products, orders]);
+
+            // --- 功能函式 ---
 
             const handleUpdateOrderQty = (orderId, productId, newQtyStr) => {
                 const newQty = parseInt(newQtyStr, 10);
@@ -162,7 +190,42 @@
                     return o;
                 }));
                 setEditingOrderQtyId(null);
-                notify("數量已更新，金額已重新計算");
+                notify("數量已更新");
+            };
+
+            // 更新配貨數量 (含防呆機制)
+            const handleUpdateAllocatedQty = (orderId, productId, newAllocatedQtyStr) => {
+                const newAllocated = parseInt(newAllocatedQtyStr, 10);
+                if (isNaN(newAllocated) || newAllocated < 0) return;
+
+                const order = orders.find(o => o.id === orderId);
+                const item = order?.items.find(i => i.productId === productId);
+                if (!item) return;
+
+                // 防呆：配貨量不可大於喊單量
+                if (newAllocated > item.qty) {
+                    notify(`配貨數量(${newAllocated})不可大於喊單數量(${item.qty})`);
+                    setEditingAllocatedQtyId(null);
+                    return;
+                }
+
+                const diff = newAllocated - (item.allocatedQty || 0);
+
+                setOrders(prev => prev.map(o => {
+                    if (o.id === orderId) {
+                        const newItems = o.items.map(i => {
+                            if (i.productId === productId) {
+                                return { ...i, allocatedQty: newAllocated };
+                            }
+                            return i;
+                        });
+                        return { ...o, items: newItems };
+                    }
+                    return o;
+                }));
+
+                setProducts(prev => prev.map(p => p.id === productId ? { ...p, spot: p.spot - diff } : p));
+                setEditingAllocatedQtyId(null);
             };
 
             const handleDeleteOrderItem = (orderId, productId) => {
@@ -175,10 +238,10 @@
 
                         const newItems = o.items.filter(i => i.productId !== productId);
                         
-                        if (itemToRemove.isAllocated) {
+                        if ((itemToRemove.allocatedQty || 0) > 0) {
                             setProducts(currProducts => currProducts.map(p => {
                                 if (p.id === productId) {
-                                    return { ...p, spot: p.spot + itemToRemove.qty };
+                                    return { ...p, spot: p.spot + itemToRemove.allocatedQty };
                                 }
                                 return p;
                             }));
@@ -239,148 +302,28 @@
                 }
             };
 
-            const customerList = useMemo(() => {
-                const map = {};
+            // 切換配貨狀態 (一鍵全到 / 一鍵取消)
+            const toggleAllocation = (orderId, productId, currentAllocated, totalQty) => {
+                const newAllocated = currentAllocated >= totalQty ? 0 : totalQty;
+                const diff = newAllocated - currentAllocated;
+
+                const product = products.find(p => p.id === productId);
                 
-                orders.forEach(o => {
-                    if (!map[o.customer]) {
-                        map[o.customer] = { 
-                            name: o.customer, 
-                            totalSpent: 0, 
-                            totalPaid: 0,
-                            orderCount: 0, 
-                            debt: 0, 
-                            items: [],
-                            rawItems: []
-                        };
-                    }
-                    map[o.customer].totalPaid += o.paid;
-                    map[o.customer].orderCount += 1;
-                    
-                    o.items.forEach(item => {
-                        map[o.customer].rawItems.push({
-                            ...item,
-                            orderId: o.id
-                        });
-                    });
-                });
-
-                Object.values(map).forEach(cust => {
-                    const nameCounts = {};
-                    cust.rawItems.forEach(item => {
-                        const productInfo = products.find(p => p.id === item.productId);
-                        const productName = productInfo ? productInfo.name : item.name;
-                        
-                        if (!nameCounts[productName]) {
-                            nameCounts[productName] = 0;
-                        }
-                        nameCounts[productName] += item.qty;
-                    });
-
-                    cust.rawItems.forEach(item => {
-                        const productInfo = products.find(p => p.id === item.productId);
-                        const productName = productInfo ? productInfo.name : item.name;
-                        
-                        let finalPrice = item.price;
-                        let originalPrice = item.price;
-                        let tierMinQty = 0;
-                        let tierPrice = 0;
-
-                        if (productInfo) {
-                            originalPrice = productInfo.price;
-                            tierMinQty = productInfo.tierMinQty;
-                            tierPrice = productInfo.tierPrice;
-                        }
-
-                        if (tierMinQty > 0 && nameCounts[productName] >= tierMinQty) {
-                            finalPrice = tierPrice;
-                        }
-
-                        const itemTotal = item.qty * finalPrice;
-                        
-                        cust.items.push({
-                            ...item,
-                            finalPrice: finalPrice,
-                            isDiscounted: finalPrice < originalPrice,
-                            itemTotal: itemTotal
-                        });
-                        cust.totalSpent += itemTotal;
-                    });
-
-                    cust.debt = Math.max(0, cust.totalSpent - cust.totalPaid);
-                });
-
-                return Object.values(map);
-            }, [orders, products]);
-
-            const handleCopyCustomerDetails = (customer) => {
-                let itemsText = '';
-                customer.items.forEach(item => {
-                    const priceDisplay = item.isDiscounted ? `$${item.finalPrice} (優惠)` : `$${item.finalPrice}`;
-                    itemsText += `- ${item.name} ${item.variant !== '單一款式' && item.variant ? `(${item.variant})` : ''} x${item.qty} ${priceDisplay}\n`;
-                });
-
-                const text = `親愛的 ${customer.name} 您好，
-您本次的連線購物明細如下：
-${itemsText}----------------
-消費總額：$${customer.totalSpent.toLocaleString()}
-
-可以先幫我搭波卻可
-有誤的話～請趕快跟我說！
-₊⊹ 若是沒有漏掉的商品 ₊⊹
-就可以直接結帳囉！
-網址：（這裡留給我自己輸入網址）
-找到自己名字後完成下單就可以嚕
-𐙚 收到所有連結後請盡速完成付款
-   不要耽誤到最佳的賞味期限唷
-
-⚝ p.s. 前一次連線有開箱分享的朋友~
-下單後請幫我備註一下：開箱禮
-𝐭𝐡𝐚𝐧𝐤 𝐲𝐨𝐮 („• ֊ •„)੭`;
-
-                const textArea = document.createElement("textarea");
-                textArea.value = text;
-                document.body.appendChild(textArea);
-                textArea.select();
-                try {
-                    document.execCommand('copy');
-                    notify("已複製通知文案！");
-                } catch (err) {
-                    console.error('複製失敗', err);
-                    notify("複製失敗，請手動複製");
+                // 檢查庫存 (僅在增加配貨時提示)
+                if (diff > 0 && product && product.spot < diff) {
+                    notify("⚠️ 注意：現貨不足，庫存將變為負數");
                 }
-                document.body.removeChild(textArea);
+
+                setOrders(prev => prev.map(o => {
+                    if (o.id === orderId) {
+                        const newItems = o.items.map(item => item.productId === productId ? { ...item, allocatedQty: newAllocated } : item);
+                        return { ...o, items: newItems };
+                    }
+                    return o;
+                }));
+
+                setProducts(prev => prev.map(p => p.id === productId ? { ...p, spot: p.spot - diff } : p));
             };
-
-            const productsWithStats = useMemo(() => {
-                return products.map(p => {
-                    let allocated = 0; 
-                    let confirmed = 0; 
-
-                    orders.forEach(o => {
-                        o.items.forEach(item => {
-                            if (item.productId === p.id) {
-                                allocated += item.qty;
-                                if (item.isAllocated) {
-                                    confirmed += item.qty;
-                                }
-                            }
-                        });
-                    });
-
-                    const pending = allocated - confirmed;
-                    const totalOwned = p.spot + confirmed;
-                    const shortage = Math.max(0, allocated - totalOwned);
-
-                    return {
-                        ...p,
-                        allocated, 
-                        confirmed, 
-                        pending,   
-                        shortage   
-                    };
-                });
-            }, [products, orders]);
 
             const navigateTo = (tab) => {
                 setActiveTab(tab);
@@ -458,7 +401,7 @@ ${itemsText}----------------
                             variant: finalVariant, 
                             qty: quantity, 
                             price: finalPrice, 
-                            isAllocated: false // 預設未配貨
+                            allocatedQty: 0 
                         }],
                         debt: 0, 
                         unclaimed: 0
@@ -471,43 +414,6 @@ ${itemsText}----------------
                 
                 setShowProxyOrder(false);
                 setProxyForm({ productName: '', variant: '', price: '', customer: '', qty: 1, purchasedQty: 0 });
-            };
-
-            // 核心功能：切換配貨狀態 (isAllocated)
-            // 這會同時影響：
-            // 1. 訂單內的 isAllocated 狀態
-            // 2. 商品的 spot (現貨) 數量 (配貨扣現貨，取消加現貨)
-            const toggleAllocation = (orderId, productId, currentStatus) => {
-                const newStatus = !currentStatus;
-                
-                const order = orders.find(o => o.id === orderId);
-                const item = order ? order.items.find(i => i.productId === productId) : null;
-                const qty = item ? item.qty : 0;
-
-                const product = products.find(p => p.id === productId);
-
-                if (newStatus && product.spot < qty) {
-                    notify("⚠️ 注意：現貨不足，將扣為負數");
-                }
-
-                setOrders(prev => prev.map(o => {
-                    if (o.id === orderId) {
-                        const newItems = o.items.map(item => {
-                            if (item.productId === productId) return { ...item, isAllocated: newStatus };
-                            return item;
-                        });
-                        return { ...o, items: newItems };
-                    }
-                    return o;
-                }));
-
-                setProducts(prev => prev.map(p => {
-                    if (p.id === productId) {
-                        const newSpot = newStatus ? p.spot - qty : p.spot + qty;
-                        return { ...p, spot: newSpot };
-                    }
-                    return p;
-                }));
             };
 
             const handleCustomerPayment = () => {
@@ -546,6 +452,144 @@ ${itemsText}----------------
                 notify(amount > 0 ? `已收款 $${amount}` : `已退款 $${Math.abs(amount)}`);
             };
 
+            const handleCopyCustomerDetails = (customer) => {
+                let itemsText = '';
+                customer.items.forEach(item => {
+                    const priceDisplay = item.isDiscounted ? `$${item.finalPrice} (優惠)` : `$${item.finalPrice}`;
+                    itemsText += `- ${item.name} ${item.variant !== '單一款式' && item.variant ? `(${item.variant})` : ''} x${item.qty} ${priceDisplay}\n`;
+                });
+
+                const text = `親愛的 ${customer.name} 您好，
+您本次的連線購物明細如下：
+${itemsText}----------------
+消費總額：$${customer.totalSpent.toLocaleString()}
+
+可以先幫我搭波卻可
+有誤的話～請趕快跟我說！
+₊⊹ 若是沒有漏掉的商品 ₊⊹
+就可以直接結帳囉！
+網址：（這裡留給我自己輸入網址）
+找到自己名字後完成下單就可以嚕
+𐙚 收到所有連結後請盡速完成付款
+   不要耽誤到最佳的賞味期限唷
+
+⚝ p.s. 前一次連線有開箱分享的朋友~
+下單後請幫我備註一下：開箱禮
+𝐭𝐡𝐚𝐧𝐤 𝐲𝐨𝐮 („• ֊ •„)੭`;
+
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    notify("已複製通知文案！");
+                } catch (err) {
+                    console.error('複製失敗', err);
+                    notify("複製失敗，請手動複製");
+                }
+                document.body.removeChild(textArea);
+            };
+
+            const getGroupAllocations = (groupName) => {
+                const variants = products.filter(p => p.name === groupName);
+                const result = [];
+                variants.forEach(variant => {
+                    orders.forEach(o => {
+                        o.items.forEach(item => {
+                            if (item.productId === variant.id) {
+                                result.push({
+                                    orderId: o.id,
+                                    productId: variant.id,
+                                    customer: o.customer,
+                                    qty: item.qty,
+                                    variant: variant.variant,
+                                    allocatedQty: item.allocatedQty || 0,
+                                    isAllocated: (item.allocatedQty || 0) >= item.qty
+                                });
+                            }
+                        });
+                    });
+                });
+                return result;
+            };
+
+            // 2. 顧客清單 (Customer List)
+            const customerList = useMemo(() => {
+                const map = {};
+                
+                orders.forEach(o => {
+                    if (!map[o.customer]) {
+                        map[o.customer] = { 
+                            name: o.customer, 
+                            totalSpent: 0, 
+                            totalPaid: 0,
+                            orderCount: 0, 
+                            debt: 0, 
+                            items: [],
+                            rawItems: []
+                        };
+                    }
+                    map[o.customer].totalPaid += o.paid;
+                    map[o.customer].orderCount += 1;
+                    
+                    o.items.forEach(item => {
+                        map[o.customer].rawItems.push({
+                            ...item,
+                            orderId: o.id
+                        });
+                    });
+                });
+
+                Object.values(map).forEach(cust => {
+                    const nameCounts = {};
+                    cust.rawItems.forEach(item => {
+                        const productInfo = products.find(p => p.id === item.productId);
+                        const productName = productInfo ? productInfo.name : item.name;
+                        
+                        if (!nameCounts[productName]) {
+                            nameCounts[productName] = 0;
+                        }
+                        nameCounts[productName] += item.qty;
+                    });
+
+                    cust.rawItems.forEach(item => {
+                        const productInfo = products.find(p => p.id === item.productId);
+                        
+                        let finalPrice = item.price;
+                        let originalPrice = item.price;
+                        let tierMinQty = 0;
+                        let tierPrice = 0;
+
+                        if (productInfo) {
+                            originalPrice = productInfo.price;
+                            tierMinQty = productInfo.tierMinQty;
+                            tierPrice = productInfo.tierPrice;
+                            
+                            const pName = productInfo.name;
+                            if (tierMinQty > 0 && nameCounts[pName] >= tierMinQty) {
+                                finalPrice = tierPrice;
+                            }
+                        }
+
+                        const itemTotal = item.qty * finalPrice;
+                        
+                        cust.items.push({
+                            ...item,
+                            finalPrice: finalPrice, 
+                            isDiscounted: finalPrice < originalPrice, 
+                            itemTotal: itemTotal,
+                            isAllocated: (item.allocatedQty || 0) >= item.qty
+                        });
+                        cust.totalSpent += itemTotal;
+                    });
+
+                    cust.debt = Math.max(0, cust.totalSpent - cust.totalPaid);
+                });
+
+                return Object.values(map);
+            }, [orders, products]);
+
             const stats = useMemo(() => {
                 const totalDebt = customerList.reduce((acc, curr) => acc + curr.debt, 0);
                 const totalRevenue = customerList.reduce((acc, curr) => acc + curr.totalSpent, 0); 
@@ -579,68 +623,33 @@ ${itemsText}----------------
                 const groups = {};
                 productsWithStats.forEach(p => {
                     if (!groups[p.name]) {
-                        groups[p.name] = {
-                            name: p.name,
-                            price: p.price,
-                            totalAllocated: 0,
-                            totalConfirmed: 0,
-                            totalPending: 0,
-                            totalSpot: 0,
-                            variants: []
-                        };
+                        groups[p.name] = { name: p.name, price: p.price, totalAllocated: 0, totalConfirmed: 0, totalSpot: 0, variants: [] };
                     }
                     groups[p.name].totalAllocated += p.allocated;
                     groups[p.name].totalConfirmed += p.confirmed;
-                    groups[p.name].totalPending += p.pending;
                     groups[p.name].totalSpot += p.spot;
                     groups[p.name].variants.push(p);
                 });
                 return Object.values(groups);
             }, [productsWithStats]);
 
-            const getGroupAllocations = (groupName) => {
-                const variants = products.filter(p => p.name === groupName);
-                const result = [];
-                variants.forEach(variant => {
-                    orders.forEach(o => {
-                        o.items.forEach(item => {
-                            if (item.productId === variant.id) {
-                                result.push({
-                                    orderId: o.id,
-                                    productId: variant.id,
-                                    customer: o.customer,
-                                    qty: item.qty,
-                                    variant: variant.variant,
-                                    isAllocated: item.isAllocated
-                                });
-                            }
-                        });
-                    });
-                });
-                return result;
-            };
-
             const debtCustomers = useMemo(() => {
-                return customerList.filter(c => c.debt > 0);
+                return customerList.filter(c => c.totalSpent > 0).sort((a, b) => b.totalSpent - a.totalSpent);
             }, [customerList]);
 
             // --- 到貨管理 (Arrival Management) 資料處理 ---
-            // 使用 isAllocated 來判斷是否 "已到貨/已配貨"
             const arrivalCustomers = useMemo(() => {
                 return customerList.map(cust => {
-                    const totalItemsCount = cust.items.length;
-                    // 計算已配貨 (isAllocated) 的項目數
-                    const arrivedItemsCount = cust.items.filter(i => i.isAllocated).length;
+                    const totalItemsCount = cust.items.length; 
+                    const arrivedItemsCount = cust.items.filter(i => (i.allocatedQty || 0) >= i.qty).length; 
+                    
+                    const totalQty = cust.items.reduce((sum, i) => sum + i.qty, 0); 
+                    const allocatedQty = cust.items.reduce((sum, i) => sum + (i.allocatedQty || 0), 0);
+
                     const isFullyArrived = totalItemsCount > 0 && totalItemsCount === arrivedItemsCount;
                     
-                    return {
-                        ...cust,
-                        totalItemsCount,
-                        arrivedItemsCount,
-                        isFullyArrived
-                    };
+                    return { ...cust, totalItemsCount, arrivedItemsCount, totalQty, allocatedQty, isFullyArrived };
                 }).sort((a, b) => {
-                    // 全到貨的排前面
                     if (a.isFullyArrived && !b.isFullyArrived) return -1;
                     if (!a.isFullyArrived && b.isFullyArrived) return 1;
                     return 0;
@@ -660,7 +669,7 @@ ${itemsText}----------------
                 : null;
 
             return (
-                <div className="min-h-screen pb-24 select-none">
+                <div className="min-h-screen pb-24">
                     {/* 通知 */}
                     {notification && (
                         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[300] bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 animate-bounce transition-all">
@@ -801,7 +810,11 @@ ${itemsText}----------------
                                                     <span className="text-[10px] opacity-80">總營業額</span>
                                                     <span className="text-lg font-bold">${stats.totalRevenue.toLocaleString()}</span>
                                                 </div>
-                                                {/* 移除了待收款項顯示，只保留點擊功能 */}
+                                                <div className="w-full h-px bg-white/30 my-1"></div>
+                                                <div className="flex justify-between items-baseline"> 
+                                                    <span className="text-[10px] opacity-80">待收款項</span>
+                                                    <span className="text-xl font-black">${stats.totalDebt.toLocaleString()}</span>
+                                                </div>
                                             </div>
                                         </div>
                                         <div className="absolute -right-4 -bottom-4 bg-white/10 w-24 h-24 rounded-full blur-2xl"></div>
@@ -839,14 +852,14 @@ ${itemsText}----------------
                             </div>
                         )}
 
-                        {/* View 4: 到貨管理 (原訂單管理) */}
+                        {/* View 4: 到貨管理 (Arrival Management) */}
                         {activeTab === 'arrivals' && (
                             <div className="space-y-4 pb-24">
                                 {filteredArrivalCustomers.length === 0 ? (
                                     <div className="text-center p-10 text-slate-400">目前沒有訂單資料</div>
                                 ) : (
                                     filteredArrivalCustomers.map((cust, idx) => {
-                                        const progress = cust.totalItemsCount > 0 ? (cust.arrivedItemsCount / cust.totalItemsCount) * 100 : 0;
+                                        const progress = cust.totalQty > 0 ? (cust.allocatedQty / cust.totalQty) * 100 : 0;
                                         
                                         return (
                                             <div key={idx} onClick={() => setSelectedArrivalCustomer(cust)} className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden cursor-pointer active:scale-98">
@@ -860,9 +873,10 @@ ${itemsText}----------------
                                                                 {cust.name}
                                                                 {cust.isFullyArrived && <span className="text-[10px] bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full font-bold">全到貨</span>}
                                                             </h4>
-                                                            <p className="text-[10px] text-slate-400 font-bold">
-                                                                共 {cust.totalItemsCount} 件商品 · 已配 {cust.arrivedItemsCount} 件
-                                                            </p>
+                                                            <div className="text-[10px] text-slate-500 font-bold mt-1 flex flex-col">
+                                                                <span>共 {cust.totalQty} 件商品 · 已到 {cust.allocatedQty} 件</span>
+                                                                <span className="text-slate-400">共 {cust.totalItemsCount} 項 · 已到 {cust.arrivedItemsCount} 項</span>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                     <div className="text-right">
@@ -901,7 +915,7 @@ ${itemsText}----------------
                         </button>
                     </div>
 
-                    {/* Modal: 到貨檢核 (Arrival Check) - 這裡的勾選等同於配貨 (Allocation) */}
+                    {/* Modal: 到貨檢核 (Arrival Check) - 修改為編輯到貨數量 */}
                     {selectedArrivalCustomer && currentSelectedArrivalCustomer && (
                          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[150] p-0 md:p-4 animate-in">
                             <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[85vh] flex flex-col">
@@ -911,7 +925,7 @@ ${itemsText}----------------
                                     <p className="text-slate-400 text-xs font-bold mt-1">到貨檢核清單 (勾選即配貨扣庫存)</p>
                                     
                                     <div className="mt-4 bg-white/10 rounded-xl p-3 flex justify-between items-center">
-                                        <div className="text-xs text-slate-300">配貨進度</div>
+                                        <div className="text-xs text-slate-300">配貨進度 (項)</div>
                                         <div className="font-bold text-white">
                                             {currentSelectedArrivalCustomer.arrivedItemsCount} / {currentSelectedArrivalCustomer.totalItemsCount}
                                         </div>
@@ -919,29 +933,65 @@ ${itemsText}----------------
                                 </div>
 
                                 <div className="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar pb-20">
-                                    {currentSelectedArrivalCustomer.items.map((item, idx) => (
-                                        <div 
-                                            key={idx} 
-                                            onClick={() => toggleAllocation(item.orderId, item.productId, item.isAllocated)}
-                                            className={`flex justify-between items-center p-3 border rounded-2xl shadow-sm cursor-pointer transition-all ${item.isAllocated ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-100'}`}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${item.isAllocated ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-slate-300 text-transparent'}`}>
-                                                    <CheckSquare size={14} />
-                                                </div>
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="font-bold text-slate-700">{item.name}</span>
-                                                        <span className="text-[10px] bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded">{item.variant}</span>
+                                    {currentSelectedArrivalCustomer.items.map((item, idx) => {
+                                        const isFullyArrivedItem = (item.allocatedQty || 0) >= item.qty;
+                                        return (
+                                            <div 
+                                                key={idx} 
+                                                className={`flex justify-between items-center p-3 border rounded-2xl shadow-sm transition-all ${isFullyArrivedItem ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-100'}`}
+                                            >
+                                                <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                    {/* 全到貨一鍵按鈕 */}
+                                                    <div 
+                                                        className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all shrink-0 cursor-pointer ${isFullyArrivedItem ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-slate-300 text-transparent'}`}
+                                                        onClick={() => toggleAllocation(item.orderId, item.productId, item.allocatedQty || 0, item.qty)}
+                                                    >
+                                                        <CheckSquare size={14} />
                                                     </div>
-                                                    <span className={`text-[10px] font-bold ${item.isAllocated ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                                        {item.isAllocated ? '已配貨' : '待排單'}
-                                                    </span>
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="font-bold text-slate-700 text-sm">{item.name}</span>
+                                                            <span className="text-[10px] bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded whitespace-nowrap">{item.variant}</span>
+                                                        </div>
+                                                        <span className={`text-[10px] font-bold ${isFullyArrivedItem ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                                            {isFullyArrivedItem ? '已全到' : '未全到'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {/* 到貨數量編輯區塊 */}
+                                                <div className="flex items-center gap-2 pl-2">
+                                                    <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm">
+                                                        <span className="text-xs text-slate-400 font-bold">到:</span>
+                                                        {editingAllocatedQtyId === `${item.orderId}-${item.productId}` ? (
+                                                            <input 
+                                                                autoFocus
+                                                                type="number"
+                                                                className="w-10 text-center font-black text-lg p-0 outline-none border-b-2 border-indigo-500 text-indigo-600"
+                                                                defaultValue={item.allocatedQty || 0}
+                                                                onBlur={(e) => handleUpdateAllocatedQty(item.orderId, item.productId, e.target.value)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') handleUpdateAllocatedQty(item.orderId, item.productId, e.target.value);
+                                                                }}
+                                                                onClick={(e) => e.stopPropagation()} 
+                                                            />
+                                                        ) : (
+                                                            <span 
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setEditingAllocatedQtyId(`${item.orderId}-${item.productId}`);
+                                                                }}
+                                                                className={`font-black text-lg cursor-pointer border-b-2 border-transparent hover:border-indigo-300 ${isFullyArrivedItem ? 'text-emerald-600' : 'text-indigo-600'}`}
+                                                            >
+                                                                {item.allocatedQty || 0}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <span className="text-xs text-slate-400 font-bold">/ 訂: {item.qty}</span>
                                                 </div>
                                             </div>
-                                            <span className="font-black text-slate-700 text-lg">x{item.qty}</span>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
@@ -1009,26 +1059,29 @@ ${itemsText}----------------
                         </div>
                     )}
 
-                    {/* Modal: 欠款清單 */}
+                    {/* Modal: 欠款清單 (改為顧客消費總覽) */}
                     {showDebtList && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[150] p-0 md:p-4 animate-in">
                             <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[85vh] flex flex-col">
                                 <div className="bg-amber-500 text-white p-6 relative overflow-hidden rounded-t-[30px] shrink-0">
-                                    <h3 className="text-2xl font-black relative z-10">欠款顧客清單</h3>
-                                    <p className="text-amber-100 text-xs font-bold relative z-10">點擊顧客查看詳情</p>
+                                    <h3 className="text-2xl font-black relative z-10">顧客消費總覽</h3>
+                                    <p className="text-amber-100 text-xs font-bold relative z-10">依消費總額排序</p>
                                     <button onClick={() => setShowDebtList(false)} className="absolute top-4 right-4 bg-white/10 p-2 rounded-full hover:bg-white/20"><X size={20}/></button>
                                 </div>
                                 <div className="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar pb-20">
                                     {debtCustomers.length === 0 ? (
-                                        <div className="text-center p-8 text-slate-400 text-sm">太棒了！目前沒有欠款顧客 🎉</div>
+                                        <div className="text-center p-8 text-slate-400 text-sm">暫無顧客消費資料</div>
                                     ) : (
                                         debtCustomers.map((c, idx) => (
                                             <div key={idx} onClick={() => { setShowDebtList(false); setSelectedCustomerDetail(c); }} className="bg-white rounded-2xl p-4 border border-slate-100 flex justify-between items-center shadow-sm cursor-pointer active:scale-98">
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center font-bold text-sm">{c.name.charAt(0)}</div>
-                                                    <span className="font-bold text-slate-800">{c.name}</span>
+                                                    <div>
+                                                        <span className="font-bold text-slate-800 block">{c.name}</span>
+                                                        <span className="text-[10px] text-slate-400">欠款: ${c.debt.toLocaleString()}</span>
+                                                    </div>
                                                 </div>
-                                                <span className="font-black text-rose-500 text-lg">${c.debt.toLocaleString()}</span>
+                                                <span className="font-black text-slate-700 text-lg">${c.totalSpent.toLocaleString()}</span>
                                             </div>
                                         ))
                                     )}
@@ -1102,6 +1155,7 @@ ${itemsText}----------------
                                                                 </td>
                                                             )}
                                                         </tr>
+                                                        {/* 多件優惠設定區塊 (自動同步) */}
                                                         {isEditingProduct && (
                                                             <tr className="bg-indigo-50/50">
                                                                 <td colSpan="5" className="p-2">
@@ -1131,31 +1185,98 @@ ${itemsText}----------------
 
                                     {/* 2. 購買人配單開關 (維持原樣) */}
                                     <div>
-                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">喊單明細 (點擊配單)</h4>
+                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">喊單明細 (配貨管理)</h4>
                                         <div className="space-y-2">
                                             {getGroupAllocations(selectedGroupName).length === 0 ? (
                                                 <p className="text-center text-slate-400 text-sm py-4">無資料</p>
                                             ) : (
                                                 getGroupAllocations(selectedGroupName).map((record, idx) => (
                                                     <div key={idx} className={`flex justify-between items-center p-3 border rounded-2xl shadow-sm transition-all ${record.isAllocated ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-100'}`}>
-                                                        <div className="flex items-center gap-3">
+                                                        <div className="flex items-center gap-3 flex-1 min-w-0">
                                                             <button 
-                                                                onClick={() => toggleAllocation(record.orderId, record.productId, record.isAllocated)}
-                                                                className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${record.isAllocated ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-transparent'}`}
+                                                                onClick={() => toggleAllocation(record.orderId, record.productId, record.allocatedQty, record.qty)}
+                                                                className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all shrink-0 ${record.isAllocated ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-transparent'}`}
                                                             >
                                                                 <CheckSquare size={14} />
                                                             </button>
-                                                            <div>
-                                                                <div className="flex items-center gap-2">
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-2 flex-wrap">
                                                                     <span className="font-bold text-slate-700">{record.customer}</span>
-                                                                    <span className="text-[10px] bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded">{record.variant}</span>
+                                                                    <span className="text-[10px] bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded whitespace-nowrap">{record.variant}</span>
                                                                 </div>
                                                                 <span className={`text-[10px] font-bold ${record.isAllocated ? 'text-indigo-600' : 'text-slate-400'}`}>
                                                                     {record.isAllocated ? '已配到貨' : '待排單'}
                                                                 </span>
                                                             </div>
                                                         </div>
-                                                        <span className="font-black text-slate-700 text-lg">x{record.qty}</span>
+
+                                                        {/* 配貨量 / 喊單量 編輯 */}
+                                                        <div className="flex items-center gap-1 pl-2">
+                                                            <div className="flex items-center bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm">
+                                                                <span className="text-xs text-slate-400 mr-1">配:</span>
+                                                                {editingAllocatedQtyId === `${record.orderId}-${record.productId}-detail` ? (
+                                                                    <input 
+                                                                        autoFocus
+                                                                        type="number"
+                                                                        className="w-8 text-center font-bold text-sm p-0 outline-none border-b border-indigo-500 text-indigo-600"
+                                                                        defaultValue={record.allocatedQty || 0}
+                                                                        onBlur={(e) => handleUpdateAllocatedQty(record.orderId, record.productId, e.target.value)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') handleUpdateAllocatedQty(record.orderId, record.productId, e.target.value);
+                                                                        }}
+                                                                        onClick={(e) => e.stopPropagation()} 
+                                                                    />
+                                                                ) : (
+                                                                    <span 
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setEditingAllocatedQtyId(`${record.orderId}-${record.productId}-detail`);
+                                                                        }}
+                                                                        className="font-bold text-indigo-600 cursor-pointer border-b border-dashed border-transparent hover:border-indigo-300"
+                                                                    >
+                                                                        {record.allocatedQty || 0}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <span className="text-slate-400 text-xs">/</span>
+                                                            <div className="flex items-center bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm">
+                                                                <span className="text-xs text-slate-400 mr-1">喊:</span>
+                                                                {editingOrderQtyId === `${record.orderId}-${record.productId}-detail` ? (
+                                                                    <input 
+                                                                        autoFocus
+                                                                        type="number"
+                                                                        className="w-8 text-center font-bold text-sm p-0 outline-none border-b border-slate-500 text-slate-700"
+                                                                        defaultValue={record.qty}
+                                                                        onBlur={(e) => handleUpdateOrderQty(record.orderId, record.productId, e.target.value)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') handleUpdateOrderQty(record.orderId, record.productId, e.target.value);
+                                                                        }}
+                                                                        onClick={(e) => e.stopPropagation()} 
+                                                                    />
+                                                                ) : (
+                                                                    <span 
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setEditingOrderQtyId(`${record.orderId}-${record.productId}-detail`);
+                                                                        }}
+                                                                        className="font-bold text-slate-700 cursor-pointer border-b border-dashed border-transparent hover:border-slate-300"
+                                                                    >
+                                                                        {record.qty}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            
+                                                            {/* 刪除按鈕 */}
+                                                            <button 
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleDeleteOrderItem(record.orderId, record.productId);
+                                                                }}
+                                                                className="text-slate-300 hover:text-rose-600 p-1 ml-1"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 ))
                                             )}
@@ -1166,19 +1287,19 @@ ${itemsText}----------------
                         </div>
                     )}
 
-                    {/* Modal: 顧客詳情 (移除收款按鈕) */}
+                    {/* Modal: 顧客詳情 (含編輯數量功能) */}
                     {selectedCustomerDetail && currentSelectedCustomer && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[160] p-0 md:p-4 animate-in">
                             <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[85vh] flex flex-col">
-                                {/* Header */}
+                                {/* Header (新增加單按鈕) */}
                                 <div className="p-6 bg-indigo-600 text-white shrink-0 relative rounded-t-[30px] flex justify-between">
                                     <div>
                                         <h3 className="text-xl font-black">{currentSelectedCustomer.name}</h3>
                                         <div className="flex flex-col gap-1 mt-2">
                                             <span className="text-indigo-200 text-xs font-bold">消費總額 ${currentSelectedCustomer.totalSpent.toLocaleString()}</span>
-                                            {/* 已付金額與欠款顯示 */}
+                                            <span className="text-emerald-300 text-xs font-bold">已付金額 ${currentSelectedCustomer.totalPaid.toLocaleString()}</span>
                                             {currentSelectedCustomer.debt > 0 ? (
-                                                <span className="text-rose-300 text-xs font-bold">欠 ${currentSelectedCustomer.debt.toLocaleString()}</span>
+                                                <span className="text-rose-300 text-xs font-bold">尚未欠款 ${currentSelectedCustomer.debt.toLocaleString()}</span>
                                             ) : (
                                                 <span className="text-white/50 text-xs font-bold">✅ 已結清</span>
                                             )}
@@ -1191,6 +1312,9 @@ ${itemsText}----------------
                                         }} className="bg-white/20 p-2 rounded-full hover:bg-white/30 text-white" title="加單">
                                             <Plus size={18} />
                                         </button>
+                                        <button onClick={() => setShowPaymentInput(!showPaymentInput)} className="bg-white/20 p-2 rounded-full hover:bg-white/30 text-white" title="登記收款">
+                                            <CreditCard size={18} />
+                                        </button>
                                         <button onClick={() => handleCopyCustomerDetails(currentSelectedCustomer)} className="bg-white/20 p-2 rounded-full hover:bg-white/30 text-white" title="複製明細">
                                             <Copy size={18} />
                                         </button>
@@ -1198,6 +1322,20 @@ ${itemsText}----------------
                                     </div>
                                 </div>
                                 
+                                {/* 收款輸入區塊 (維持原樣) */}
+                                {showPaymentInput && (
+                                    <div className="bg-indigo-700 p-4 flex gap-2 animate-in">
+                                        <input 
+                                            type="number" 
+                                            placeholder="輸入收款金額 (負數為退款)" 
+                                            className="flex-1 bg-white/10 border border-white/20 rounded-xl p-2 text-white placeholder:text-white/50 outline-none"
+                                            value={paymentAmount}
+                                            onChange={(e) => setPaymentAmount(e.target.value)}
+                                        />
+                                        <button onClick={handleCustomerPayment} className="bg-emerald-500 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg">確認</button>
+                                    </div>
+                                )}
+
                                 <div className="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar pb-20">
                                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">購物明細 (點擊數量修改)</h4>
                                     {currentSelectedCustomer.items.map((item, idx) => (
@@ -1257,7 +1395,7 @@ ${itemsText}----------------
                         </div>
                     )}
 
-                    {/* Modal: 廠商採購單 (顯示精準缺貨數字) */}
+                    {/* Modal: 廠商採購單 */}
                     {showPurchaseList && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[150] p-0 md:p-4 animate-in">
                             <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[85vh] flex flex-col">
