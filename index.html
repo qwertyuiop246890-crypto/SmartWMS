@@ -263,8 +263,6 @@
                             tierMinQty = productInfo.tierMinQty;
                             tierPrice = productInfo.tierPrice;
                             const pName = productInfo.name;
-                            // 優惠邏輯：檢查是否設定了優惠門檻和優惠價格，並且數量達到門檻
-                            // 混搭邏輯：使用 nameCounts[pName] 代表同名商品總數
                             if (tierMinQty > 0 && tierPrice > 0 && nameCounts[pName] >= tierMinQty) {
                                 finalPrice = tierPrice;
                             }
@@ -351,7 +349,16 @@
             const filteredPendingArrivals = pendingArrivals.filter(c => c.name.includes(searchQuery));
             const filteredShippedArrivals = shippedArrivals.filter(c => c.name.includes(searchQuery));
             
-            const availableVariants = useMemo(() => [...new Set(products.filter(p => p.name === proxyForm.productName).map(p => p.variant))], [products, proxyForm.productName]);
+            // --- 優化後的款式建議邏輯 (Smart Variants) ---
+            const availableVariants = useMemo(() => {
+                // 1. 如果有完全匹配的商品名稱，只顯示該商品的款式
+                const exactMatch = products.filter(p => p.name === proxyForm.productName);
+                if (exactMatch.length > 0) {
+                    return [...new Set(exactMatch.map(p => p.variant))];
+                }
+                // 2. 如果沒有(是新商品或正在輸入)，顯示所有歷史款式供選擇
+                return [...new Set(products.map(p => p.variant))];
+            }, [products, proxyForm.productName]);
 
             // 3. 事件處理 (Handlers)
             const handleExportBackup = () => {
@@ -412,7 +419,6 @@
                     
                     for (const customer of targets) {
                         setExportTargetCustomer(customer);
-                        // 等待 React 渲染 DOM
                         await new Promise(r => setTimeout(r, 200));
                         
                         const element = document.getElementById('hidden-receipt-container');
@@ -446,20 +452,41 @@
             };
 
             const navigateTo = (tab) => { setActiveTab(tab); setSearchQuery(''); };
-            const handleProxyProductChange = (e) => { const name = e.target.value; const existing = products.find(p => p.name === name); setProxyForm(prev => ({ ...prev, productName: name, price: existing ? existing.price : prev.price })); };
+            
+            // 優化後的商品變更處理：當商品改變時，嘗試帶入該商品的價格
+            const handleProxyProductChange = (e) => { 
+                const name = e.target.value; 
+                // 找出該名稱的任一款式來取得價格(如果有的話)
+                const existing = products.find(p => p.name === name); 
+                setProxyForm(prev => ({ 
+                    ...prev, 
+                    productName: name, 
+                    price: existing ? existing.price : prev.price 
+                })); 
+            };
+
+            // 新增：當款式變更時，嘗試帶入該特定款式的價格 (如果有的話)
+            const handleProxyVariantChange = (e) => {
+                const variant = e.target.value;
+                setProxyForm(prev => {
+                    const existing = products.find(p => p.name === prev.productName && p.variant === variant);
+                    return {
+                        ...prev,
+                        variant: variant,
+                        price: existing ? existing.price : prev.price
+                    };
+                });
+            };
+
             const handleUpdateOrderQty = (oid, pid, v) => { const q = parseInt(v); if(isNaN(q)) return; setOrders(prev => prev.map(o => o.id===oid ? {...o, items: o.items.map(i=>i.productId===pid?{...i,qty:q}:i).filter(i=>i.qty>0)} : o).filter(o=>o.items.length>0)); setEditingOrderQtyId(null); };
             const handleUpdateAllocatedQty = (oid, pid, v) => { const q = parseInt(v); if(isNaN(q)) return; const order = orders.find(o=>o.id===oid); const item = order.items.find(i=>i.productId===pid); if(q>item.qty){ notify("不可大於喊單"); return; } const diff = q - (item.allocatedQty||0); setOrders(prev=>prev.map(o=>o.id===oid?{...o,items:o.items.map(i=>i.productId===pid?{...i,allocatedQty:q}:i)}:o)); setProducts(prev=>prev.map(p=>p.id===pid?{...p,spot:(p.spot||0)-diff}:p)); setEditingAllocatedQtyId(null); };
             const handleUpdatePurchaseQty = (pid, v) => { const q = parseInt(v); if(isNaN(q)) return; const p = productsWithStats.find(x=>x.id===pid); if(p){ const newSpot = p.allocated - p.confirmed - q; setProducts(prev=>prev.map(x=>x.id===pid?{...x,spot:newSpot}:x)); setEditingPurchaseQtyId(null); } };
             const handleDeleteOrderItem = (oid, pid) => { if(confirm("刪除?")) { const order = orders.find(o=>o.id===oid); const item = order.items.find(i=>i.productId===pid); if(item?.allocatedQty>0){ setProducts(prev=>prev.map(p=>p.id===pid?{...p,spot:(p.spot||0)+item.allocatedQty}:p)); } setOrders(prev=>prev.map(o=>o.id===oid?{...o,items:o.items.filter(i=>i.productId!==pid)}:o).filter(o=>o.items.length>0)); } };
             
-            // 更新商品資訊處理器 (支援優惠設定與價格)
             const handleUpdateProductInfo = (pid, f, v) => { 
                 const val = parseInt(v); 
                 if(isNaN(val)) return; 
                 const t = products.find(p=>p.id===pid); 
-                // 如果是優惠欄位 (tier 開頭) 或價格，則更新同名商品；若只是 spot 等其他欄位則只更新該 ID
-                // 這裡我們讓價格 (price) 也只更新該款式，或者您可以選擇同步。目前設計為單一款式價格可獨立。
-                // 優惠設定 (tier) 強制同步同名商品
                 setProducts(prev=>prev.map(p=> 
                     (f.startsWith('tier') && p.name===t.name) || p.id===pid ? {...p, [f]:val} : p
                 )); 
@@ -728,7 +755,7 @@
                                     <div className="flex gap-3">
                                         <div className="flex-1 space-y-1">
                                             <label className="text-xs font-bold text-latte-400 ml-1">款式</label>
-                                            <input placeholder="款式" className="w-full bg-cream-50 border border-cream-200 p-3 rounded-xl focus:border-latte-400 outline-none text-latte-800 placeholder:text-latte-300 shadow-inner-soft" list="vl" value={proxyForm.variant} onChange={e=>setProxyForm({...proxyForm,variant:e.target.value})}/><datalist id="vl">{availableVariants.map(v=><option key={v} value={v}/>)}</datalist>
+                                            <input placeholder="款式" className="w-full bg-cream-50 border border-cream-200 p-3 rounded-xl focus:border-latte-400 outline-none text-latte-800 placeholder:text-latte-300 shadow-inner-soft" list="vl" value={proxyForm.variant} onChange={handleProxyVariantChange}/><datalist id="vl">{availableVariants.map(v=><option key={v} value={v}/>)}</datalist>
                                         </div>
                                         <div className="w-24 space-y-1">
                                             <label className="text-xs font-bold text-latte-400 ml-1">價格</label>
@@ -989,3 +1016,5 @@
     </script>
 </body>
 </html>
+
+
