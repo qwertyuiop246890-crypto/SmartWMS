@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>智慧連線倉庫管理系統 (完整版)</title>
+    <title>Cuibo WMS 智慧連線倉庫管理系統</title>
     
     <!-- 1. 載入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -16,39 +16,85 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
+    <!-- 4. 設定自定義顏色 (Tailwind Config) -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        cream: {
+                            50: '#FFFBF5',  // 輸入框/極淺底
+                            100: '#FCF4E9', // 全域主背景
+                            200: '#EBE0D6', // 邊框/分隔線
+                            300: '#D3C5BC', // 失效文字
+                        },
+                        latte: {
+                            400: '#B5A496', // 輔助文字
+                            500: '#957E6B', // 主強調色 (Brand Color)
+                            600: '#8C6A5D', // 深一點的強調
+                            800: '#5E4B41', // 主要文字 (深咖啡)
+                            900: '#4A3B32', // 極深色
+                        }
+                    },
+                    boxShadow: {
+                        'soft': '0 4px 20px -5px rgba(149, 126, 107, 0.1)',
+                        'inner-soft': 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.02)',
+                    }
+                }
+            }
+        }
+    </script>
+
     <style>
+        /* 全域樣式設定 */
+        body {
+            background-color: #FCF4E9; /* 主色調 */
+            color: #5E4B41; /* 主要文字顏色 */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+        }
+
+        /* 隱藏卷軸但保留功能 */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .animate-in { animation: fadeIn 0.3s ease-out forwards; }
-        * { -webkit-tap-highlight-color: transparent; }
-        /* Toggle Switch */
-        .toggle-checkbox:checked { right: 0; border-color: #4F46E5; }
-        .toggle-checkbox:checked + .toggle-label { background-color: #4F46E5; }
         
-        /* 隱藏的匯出容器 (用於生成精美圖片) */
+        /* 動畫 */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-in { animation: fadeIn 0.3s ease-out forwards; }
+        
+        /* 移除點擊高亮 */
+        * { -webkit-tap-highlight-color: transparent; }
+
+        /* --- 圖片匯出專用樣式 (隱藏區塊) --- */
         #hidden-receipt-container {
             position: fixed;
             top: 0;
             left: -9999px;
-            width: 500px; /* 設定固定寬度以確保圖片格式統一 */
-            background-color: #ffffff;
+            width: 500px;
+            background-color: #FCF4E9; /* 確保匯出圖片背景色一致 */
             z-index: -100;
             padding: 40px;
             box-sizing: border-box;
-            font-family: 'Helvetica', 'Arial', sans-serif;
-            color: #1f2937;
+            font-family: sans-serif;
+            color: #5E4B41;
             line-height: 1.5;
         }
         
+        .receipt-card {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 4px 20px rgba(149, 126, 107, 0.15);
+            border: 1px solid #EBE0D6;
+        }
+
         .receipt-header {
             text-align: center;
-            border-bottom: 2px dashed #e5e7eb;
+            border-bottom: 2px dashed #D3C5BC;
             padding-bottom: 20px;
             margin-bottom: 20px;
         }
-        .receipt-title { font-size: 24px; font-weight: 900; margin-bottom: 5px; color: #111827; }
-        .receipt-subtitle { font-size: 14px; color: #6b7280; }
+        .receipt-title { font-size: 24px; font-weight: 900; margin-bottom: 5px; color: #5E4B41; letter-spacing: 1px; }
+        .receipt-subtitle { font-size: 14px; color: #957E6B; }
         
         .receipt-info {
             display: flex;
@@ -56,7 +102,7 @@
             margin-bottom: 20px;
             font-size: 14px;
             font-weight: 700;
-            color: #374151;
+            color: #8C6A5D;
         }
 
         .receipt-table {
@@ -64,34 +110,31 @@
             border-collapse: collapse;
             margin-bottom: 20px;
         }
-        .receipt-table th { text-align: left; font-size: 12px; color: #9ca3af; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; }
-        .receipt-table td { padding: 12px 0; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
-        .receipt-table .col-name { width: 50%; }
-        .receipt-table .col-price { width: 20%; text-align: right; }
-        .receipt-table .col-qty { width: 10%; text-align: center; }
-        .receipt-table .col-total { width: 20%; text-align: right; font-weight: bold; }
+        .receipt-table th { text-align: left; font-size: 12px; color: #957E6B; padding-bottom: 8px; border-bottom: 1px solid #EBE0D6; }
+        .receipt-table td { padding: 12px 0; border-bottom: 1px dashed #EBE0D6; vertical-align: top; }
         
-        .item-name { font-size: 14px; font-weight: 700; color: #1f2937; display: block; margin-bottom: 2px; }
-        .item-spec { font-size: 12px; color: #6b7280; }
+        .item-name { font-size: 14px; font-weight: 700; color: #5E4B41; display: block; margin-bottom: 2px; }
+        .item-spec { font-size: 12px; color: #B5A496; }
         
         .receipt-summary {
-            background-color: #f9fafb;
+            background-color: #FFFBF5;
             padding: 20px;
             border-radius: 12px;
             text-align: right;
+            border: 1px solid #EBE0D6;
         }
-        .summary-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 14px; }
-        .summary-total { display: flex; justify-content: space-between; font-size: 20px; font-weight: 900; color: #4f46e5; margin-top: 10px; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+        .summary-total { display: flex; justify-content: space-between; font-size: 20px; font-weight: 900; color: #957E6B; margin-top: 10px; border-top: 1px solid #EBE0D6; padding-top: 10px; }
         
         .receipt-footer {
             margin-top: 30px;
             text-align: center;
             font-size: 12px;
-            color: #9ca3af;
+            color: #B5A496;
+            font-weight: bold;
         }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900 font-sans">
+<body>
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
@@ -107,7 +150,9 @@
         } from 'https://esm.sh/lucide-react@0.263.1?dev';
 
         const App = () => {
-            // --- 1. State Definitions ---
+            // --- 核心邏輯保持不變 ---
+            
+            // 1. 資料讀取與狀態
             const loadLocal = (key, def) => {
                 const saved = localStorage.getItem(key);
                 return saved ? JSON.parse(saved) : def;
@@ -141,20 +186,13 @@
             const [selectedArrivalCustomer, setSelectedArrivalCustomer] = useState(null); 
             
             const [isEditingProduct, setIsEditingProduct] = useState(false);
-            const [showPaymentInput, setShowPaymentInput] = useState(false);
-            const [paymentAmount, setPaymentAmount] = useState('');
             const [isSyncing, setIsSyncing] = useState(false);
             
             const [editingOrderQtyId, setEditingOrderQtyId] = useState(null);
             const [editingAllocatedQtyId, setEditingAllocatedQtyId] = useState(null);
-            const [editingArrivedQtyId, setEditingArrivedQtyId] = useState(null);
             const [editingPurchaseQtyId, setEditingPurchaseQtyId] = useState(null);
-
-            const [isBatchExporting, setIsBatchExporting] = useState(false);
-            const [batchProgress, setBatchProgress] = useState(0);
             
-            const [selectedCustomerIds, setSelectedCustomerIds] = useState(new Set());
-            const [exportTargetCustomer, setExportTargetCustomer] = useState(null); // 用於單張圖片匯出的暫存狀態
+            const [exportTargetCustomer, setExportTargetCustomer] = useState(null); 
 
             const [proxyForm, setProxyForm] = useState({
                 productName: '', variant: '', price: '', customer: '', qty: 1, purchasedQty: 0
@@ -170,7 +208,7 @@
                 setTimeout(() => setNotification(null), 3000);
             };
 
-            // --- Data Calculations ---
+            // 2. 數據計算 (Data Calculations)
             const productsWithStats = useMemo(() => {
                 return products.map(p => {
                     let allocated = 0; let confirmed = 0; 
@@ -275,6 +313,26 @@
                  });
                  return Object.values(groups);
             }, [products, productsWithStats]);
+            
+            const getGroupAllocations = (groupName) => {
+                 let allocations = [];
+                 orders.forEach(o => {
+                     o.items.forEach(item => {
+                         if(item.name === groupName) {
+                            allocations.push({
+                                orderId: o.id,
+                                customer: o.customer,
+                                productId: item.productId,
+                                variant: item.variant,
+                                qty: item.qty,
+                                allocatedQty: item.allocatedQty || 0,
+                                isAllocated: (item.allocatedQty || 0) >= item.qty
+                            });
+                         }
+                     });
+                 });
+                 return allocations;
+            };
 
             const purchaseList = useMemo(() => productsWithStats.filter(p => p.shortage > 0).map(p => ({ ...p })), [productsWithStats]);
             const revenueCustomers = useMemo(() => customerList.filter(c => c.totalSpent > 0).sort((a, b) => b.totalSpent - a.totalSpent), [customerList]);
@@ -286,11 +344,11 @@
             
             const availableVariants = useMemo(() => [...new Set(products.filter(p => p.name === proxyForm.productName).map(p => p.variant))], [products, proxyForm.productName]);
 
-            // --- Handlers ---
+            // 3. 事件處理 (Handlers)
             const handleExportBackup = () => {
                 const data = { products, orders, timestamp: new Date().toISOString() };
                 const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-                saveAs(blob, `SmartWMS_Backup_${new Date().toISOString().slice(0,10)}.json`);
+                saveAs(blob, `CuiboWMS_Backup_${new Date().toISOString().slice(0,10)}.json`);
                 notify("備份檔已下載");
             };
 
@@ -316,37 +374,21 @@
                 reader.readAsText(file);
             };
 
-            // 精美的圖片匯出功能
             const handleExportToImage = async (customer) => {
                 if (!customer) return;
-                
-                // 設定要渲染的隱藏容器內容
                 setExportTargetCustomer(customer);
-                
-                // 等待 React 渲染 DOM
                 await new Promise(resolve => setTimeout(resolve, 100));
-
                 const element = document.getElementById('hidden-receipt-container');
                 if (!element) return;
-                
                 try {
-                    const canvas = await html2canvas(element, { 
-                        useCORS: true, 
-                        backgroundColor: '#ffffff', 
-                        scale: 2 
-                    });
+                    const canvas = await html2canvas(element, { useCORS: true, backgroundColor: '#FCF4E9', scale: 2 });
                     const dataUrl = canvas.toDataURL('image/png');
                     const link = document.createElement('a');
                     link.download = `${customer.name}_訂單明細.png`;
                     link.href = dataUrl;
                     link.click();
                     notify("圖片已匯出");
-                } catch (err) { 
-                    console.error(err); 
-                    notify("匯出失敗"); 
-                } finally {
-                    setExportTargetCustomer(null); // 清除隱藏內容
-                }
+                } catch (err) { console.error(err); notify("匯出失敗"); } finally { setExportTargetCustomer(null); }
             };
             
             const handleClearData = () => {
@@ -357,18 +399,14 @@
                 }
             };
 
-            // ... (Other handlers unchanged, including API sync functions)
-            // For brevity, using placeholder for repetitive logic which is same as before
             const navigateTo = (tab) => { setActiveTab(tab); setSearchQuery(''); };
             const handleProxyProductChange = (e) => { const name = e.target.value; const existing = products.find(p => p.name === name); setProxyForm(prev => ({ ...prev, productName: name, price: existing ? existing.price : prev.price })); };
             const handleUpdateOrderQty = (oid, pid, v) => { const q = parseInt(v); if(isNaN(q)) return; setOrders(prev => prev.map(o => o.id===oid ? {...o, items: o.items.map(i=>i.productId===pid?{...i,qty:q}:i).filter(i=>i.qty>0)} : o).filter(o=>o.items.length>0)); setEditingOrderQtyId(null); };
-            const handleUpdateAllocatedQty = (oid, pid, v) => { const q = parseInt(v); if(isNaN(q)) return; const order = orders.find(o=>o.id===oid); const item = order.items.find(i=>i.productId===pid); const prod = products.find(p=>p.id===pid); if(q>item.qty){ notify("不可大於喊單"); return; } const diff = q - (item.allocatedQty||0); setOrders(prev=>prev.map(o=>o.id===oid?{...o,items:o.items.map(i=>i.productId===pid?{...i,allocatedQty:q}:i)}:o)); setProducts(prev=>prev.map(p=>p.id===pid?{...p,spot:(p.spot||0)-diff}:p)); setEditingAllocatedQtyId(null); };
+            const handleUpdateAllocatedQty = (oid, pid, v) => { const q = parseInt(v); if(isNaN(q)) return; const order = orders.find(o=>o.id===oid); const item = order.items.find(i=>i.productId===pid); if(q>item.qty){ notify("不可大於喊單"); return; } const diff = q - (item.allocatedQty||0); setOrders(prev=>prev.map(o=>o.id===oid?{...o,items:o.items.map(i=>i.productId===pid?{...i,allocatedQty:q}:i)}:o)); setProducts(prev=>prev.map(p=>p.id===pid?{...p,spot:(p.spot||0)-diff}:p)); setEditingAllocatedQtyId(null); };
             const handleUpdatePurchaseQty = (pid, v) => { const q = parseInt(v); if(isNaN(q)) return; const p = productsWithStats.find(x=>x.id===pid); if(p){ const newSpot = p.allocated - p.confirmed - q; setProducts(prev=>prev.map(x=>x.id===pid?{...x,spot:newSpot}:x)); setEditingPurchaseQtyId(null); } };
             const handleDeleteOrderItem = (oid, pid) => { if(confirm("刪除?")) { const order = orders.find(o=>o.id===oid); const item = order.items.find(i=>i.productId===pid); if(item?.allocatedQty>0){ setProducts(prev=>prev.map(p=>p.id===pid?{...p,spot:(p.spot||0)+item.allocatedQty}:p)); } setOrders(prev=>prev.map(o=>o.id===oid?{...o,items:o.items.filter(i=>i.productId!==pid)}:o).filter(o=>o.items.length>0)); } };
             const handleUpdateProductInfo = (pid, f, v) => { const val = parseInt(v); if(isNaN(val)) return; const t = products.find(p=>p.id===pid); setProducts(prev=>prev.map(p=> (f.startsWith('tier') && p.name===t.name) || p.id===pid ? {...p, [f]:val} : p)); };
             const handleDeleteProduct = (pid) => { if(confirm("刪除款式?")) setProducts(prev=>prev.filter(p=>p.id!==pid)); };
-            const handleDeleteProductGroup = (name,e) => { e.stopPropagation(); if(confirm(`刪除 ${name}?`)) { setProducts(prev=>prev.filter(p=>p.name!==name)); setSelectedGroupName(null); } };
-            const handleDeleteCustomer = (name,e) => { e.stopPropagation(); if(confirm(`刪除 ${name}?`)) { setOrders(prev=>prev.filter(o=>o.customer!==name)); if(selectedCustomerDetail?.name===name) setSelectedCustomerDetail(null); } };
             const toggleAllocation = (oid, pid, curr, total) => { const next = curr >= total ? 0 : total; const diff = next - curr; const p = products.find(x=>x.id===pid); if(diff>0&&(p.spot||0)<diff) notify("現貨不足"); setOrders(prev=>prev.map(o=>o.id===oid?{...o,items:o.items.map(i=>i.productId===pid?{...i,allocatedQty:next}:i)}:o)); setProducts(prev=>prev.map(p=>p.id===pid?{...p,spot:(p.spot||0)-diff}:p)); };
             const handleShipCustomer = (name) => { if(confirm("確認出貨?")) { setOrders(prev=>prev.map(o=>o.customer===name&&o.status!=='已出貨'?{...o,status:'已出貨'}:o)); setSelectedArrivalCustomer(null); } };
             const handleUnshipCustomer = (name) => { if(confirm("回復未出貨?")) { setOrders(prev=>prev.map(o=>o.customer===name&&o.status==='已出貨'?{...o,status:'待結單'}:o)); setSelectedArrivalCustomer(null); } };
@@ -377,166 +415,169 @@
             const handleCloudUpload = async () => { if(!apiUrl) { notify("請設定API"); return; } setIsSyncing(true); try { await fetch(apiUrl, { method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'}, body:JSON.stringify({products,orders}) }); notify("上傳成功"); } catch(e) { notify("上傳失敗"); } finally { setIsSyncing(false); } };
             const handleCloudDownload = async () => { if(!apiUrl) { notify("請設定API"); return; } setIsSyncing(true); try { const res = await fetch(apiUrl); const data = await res.json(); if(data.products){ if(confirm("覆蓋資料?")){ setProducts(data.products); setOrders(data.orders); notify("下載成功"); } } } catch(e) { notify("下載失敗"); } finally { setIsSyncing(false); } };
             
-            // 確保選中物件更新
             const currentSelectedCustomer = selectedCustomerDetail ? customerList.find(c => c.name === selectedCustomerDetail.name) : null;
-            
-            // 修正：在渲染時動態查找對應清單中的顧客物件
-            const currentSelectedArrivalCustomer = selectedArrivalCustomer
-                ? (selectedArrivalCustomer.source === 'shipped' 
-                    ? shippedArrivals.find(c => c.name === selectedArrivalCustomer.name) 
-                    : pendingArrivals.find(c => c.name === selectedArrivalCustomer.name)) 
-                  || selectedArrivalCustomer 
-                : null;
+            const currentSelectedArrivalCustomer = selectedArrivalCustomer ? (selectedArrivalCustomer.source === 'shipped' ? shippedArrivals.find(c => c.name === selectedArrivalCustomer.name) : pendingArrivals.find(c => c.name === selectedArrivalCustomer.name)) || selectedArrivalCustomer : null;
             const isArrivalShipped = currentSelectedArrivalCustomer && !orders.some(o => o.customer === currentSelectedArrivalCustomer.name && o.status !== '已出貨');
 
-            // --- Render ---
+            // --- 介面渲染 (Render) ---
             return (
                 <div className="min-h-screen pb-24">
-                    {/* Hidden Receipt for Image Generation */}
+                    {/* 隱藏的匯出用收據 (Hidden Receipt for Image Generation) */}
                     {exportTargetCustomer && (
                         <div id="hidden-receipt-container">
-                            <div className="receipt-header">
-                                <div className="receipt-title">{exportTargetCustomer.name} 的購物清單</div>
-                                <div className="receipt-subtitle">{new Date().toLocaleString()}</div>
-                            </div>
-                            <div className="receipt-info">
-                                <span>訂單編號: {Date.now().toString().slice(-6)}</span>
-                                <span>客戶: {exportTargetCustomer.name}</span>
-                            </div>
-                            <table className="receipt-table">
-                                <thead>
-                                    <tr>
-                                        <th className="col-name">商品 / 規格</th>
-                                        <th className="col-price">單價</th>
-                                        <th className="col-qty">數量</th>
-                                        <th className="col-total">小計</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {exportTargetCustomer.items.map((item, idx) => (
-                                        <tr key={idx}>
-                                            <td className="col-name">
-                                                <span className="item-name">{item.name}</span>
-                                                <span className="item-spec">{item.variant}</span>
-                                            </td>
-                                            <td className="col-price">${item.finalPrice}</td>
-                                            <td className="col-qty">{item.qty}</td>
-                                            <td className="col-total">${item.itemTotal}</td>
+                            <div className="receipt-card">
+                                <div className="receipt-header">
+                                    <div className="receipt-title">{exportTargetCustomer.name} 的購物清單</div>
+                                    <div className="receipt-subtitle">{new Date().toLocaleString()}</div>
+                                </div>
+                                <div className="receipt-info">
+                                    <span>訂單編號: {Date.now().toString().slice(-6)}</span>
+                                    <span>客戶: {exportTargetCustomer.name}</span>
+                                </div>
+                                <table className="receipt-table">
+                                    <thead>
+                                        <tr>
+                                            <th className="col-name">商品 / 規格</th>
+                                            <th className="col-price">單價</th>
+                                            <th className="col-qty">數量</th>
+                                            <th className="col-total">小計</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                            <div className="receipt-summary">
-                                <div className="summary-row">
-                                    <span>項目總數:</span>
-                                    <span>{exportTargetCustomer.items.length} 項</span>
+                                    </thead>
+                                    <tbody>
+                                        {exportTargetCustomer.items.map((item, idx) => (
+                                            <tr key={idx}>
+                                                <td className="col-name">
+                                                    <span className="item-name">{item.name}</span>
+                                                    <span className="item-spec">{item.variant}</span>
+                                                </td>
+                                                <td className="col-price">${item.finalPrice}</td>
+                                                <td className="col-qty">{item.qty}</td>
+                                                <td className="col-total">${item.itemTotal}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                <div className="receipt-summary">
+                                    <div className="summary-row flex justify-between text-sm mb-1">
+                                        <span>項目總數:</span>
+                                        <span>{exportTargetCustomer.items.length} 項</span>
+                                    </div>
+                                    <div className="summary-total">
+                                        <span>總金額:</span>
+                                        <span>${exportTargetCustomer.totalSpent.toLocaleString()}</span>
+                                    </div>
                                 </div>
-                                <div className="summary-total">
-                                    <span>總金額:</span>
-                                    <span>${exportTargetCustomer.totalSpent.toLocaleString()}</span>
+                                <div className="receipt-footer">
+                                    感謝您的購買！請於期限內完成匯款。
                                 </div>
-                            </div>
-                            <div className="receipt-footer">
-                                感謝您的購買！請於期限內完成匯款。
                             </div>
                         </div>
                     )}
 
-                    {notification && <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[300] bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 animate-bounce"><CheckCircle2 size={18} className="text-green-400" />{notification}</div>}
+                    {/* 通知 Toast */}
+                    {notification && <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[300] bg-latte-800 text-cream-50 px-6 py-3 rounded-2xl shadow-xl flex items-center gap-2 animate-bounce border border-latte-600"><CheckCircle2 size={18} className="text-cream-200" />{notification}</div>}
 
-                    {/* Header */}
-                    <div className="bg-indigo-600 text-white p-4 shadow-lg sticky top-0 z-50 flex justify-between items-center max-w-2xl mx-auto">
-                        <h1 className="text-xl font-bold flex items-center gap-2" onClick={() => navigateTo('dashboard')}><Zap className="fill-yellow-400 text-yellow-400" /> Smart WMS <span className="text-[10px] bg-white/20 px-2 py-1 rounded">API+Local</span></h1>
+                    {/* Header (頂部標題) */}
+                    <div className="bg-latte-500 text-cream-50 p-4 shadow-sm sticky top-0 z-50 flex justify-between items-center max-w-2xl mx-auto shadow-latte-200">
+                        <h1 className="text-xl font-bold flex items-center gap-2 cursor-pointer" onClick={() => navigateTo('dashboard')}><Zap className="fill-cream-100 text-cream-100" /> Cuibo WMS</h1>
                     </div>
 
-                    {/* Nav */}
-                    <div className="bg-white border-b sticky top-[60px] z-40">
+                    {/* Nav (分頁導航) */}
+                    <div className="bg-white/90 backdrop-blur-sm border-b border-cream-200 sticky top-[60px] z-40">
                          <div className="flex max-w-2xl mx-auto overflow-x-auto no-scrollbar">
                             {[{id:'products',l:'商品列表',i:ShoppingBag},{id:'dashboard',l:'狀態',i:LayoutDashboard},{id:'customers',l:'顧客列表',i:Users},{id:'arrivals',l:'到貨管理',i:BoxSelect}].map(t => (
-                                <button key={t.id} onClick={() => {setActiveTab(t.id); setSearchQuery('')}} className={`flex-1 py-4 px-2 flex flex-col items-center gap-1 text-[10px] font-bold ${activeTab === t.id ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}><t.i size={18}/>{t.l}</button>
+                                <button key={t.id} onClick={() => {setActiveTab(t.id); setSearchQuery('')}} className={`flex-1 py-4 px-2 flex flex-col items-center gap-1 text-[11px] font-bold transition-all ${activeTab === t.id ? 'text-latte-500 border-b-2 border-latte-500 bg-cream-50' : 'text-latte-300'}`}><t.i size={20}/>{t.l}</button>
                             ))}
                         </div>
                     </div>
 
-                    {/* Content */}
-                    <main className="max-w-2xl mx-auto p-4 space-y-4">
-                        {activeTab !== 'dashboard' && <div className="relative"><input type="text" placeholder="搜尋..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-white rounded-2xl p-4 pl-12 shadow-sm outline-none" /><Search size={18} className="absolute left-4 top-4 text-slate-300" /></div>}
+                    {/* Main Content (主要內容區) */}
+                    <main className="max-w-2xl mx-auto p-4 space-y-5">
+                        {/* 搜尋列 */}
+                        {activeTab !== 'dashboard' && <div className="relative"><input type="text" placeholder="搜尋商品、顧客..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-cream-50 text-latte-800 rounded-2xl p-4 pl-12 shadow-inner-soft outline-none border border-transparent focus:border-latte-300 transition-all placeholder:text-latte-300" /><Search size={18} className="absolute left-4 top-4 text-latte-300" /></div>}
                         
-                        {/* Sidebar Backup Buttons */}
-                        <div className="flex gap-2 overflow-x-auto pb-2">
-                             <button onClick={()=>setShowSettings(true)} className="bg-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0"><Settings size={14}/> API 設定</button>
-                             <button onClick={handleCloudUpload} className="bg-indigo-600 text-white px-3 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0"><Cloud size={14}/> 上傳雲端</button>
-                             <button onClick={handleCloudDownload} className="bg-emerald-600 text-white px-3 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0"><Download size={14}/> 雲端同步</button>
-                             <div className="w-px bg-slate-300 mx-1 shrink-0"></div>
-                             <button onClick={handleExportBackup} className="bg-slate-700 text-white px-3 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0"><Download size={14}/> 備份檔案</button>
-                             <label className="bg-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs flex items-center gap-1 cursor-pointer shrink-0">
+                        {/* 側邊工具列 (Sidebar Backup Buttons) - 保持指定顏色但優化外觀 */}
+                        <div className="flex gap-2 overflow-x-auto pb-2 px-1 scrollbar-hide">
+                             <button onClick={()=>setShowSettings(true)} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm active:scale-95 transition-transform"><Settings size={14}/> API 設定</button>
+                             <button onClick={handleCloudUpload} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm shadow-indigo-200 active:scale-95 transition-transform"><Cloud size={14}/> 上傳雲端</button>
+                             <button onClick={handleCloudDownload} className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm shadow-emerald-200 active:scale-95 transition-transform"><Download size={14}/> 雲端同步</button>
+                             <div className="w-px bg-latte-300 mx-1 shrink-0 h-6 self-center opacity-50"></div>
+                             <button onClick={handleExportBackup} className="bg-slate-700 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm active:scale-95 transition-transform"><Download size={14}/> 備份檔案</button>
+                             <label className="bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs flex items-center gap-1 cursor-pointer shrink-0 font-bold shadow-sm active:scale-95 transition-transform">
                                 <Upload size={14}/> 還原檔案
                                 <input type="file" ref={fileInputRef} onChange={handleImportBackup} accept=".json" className="hidden" />
                              </label>
-                             <div className="w-px bg-slate-300 mx-1 shrink-0"></div>
-                             <button onClick={handleClearData} className="bg-rose-600 text-white px-3 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0"><Trash2 size={14}/> 清除重置</button>
+                             <div className="w-px bg-latte-300 mx-1 shrink-0 h-6 self-center opacity-50"></div>
+                             <button onClick={handleClearData} className="bg-rose-600 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm shadow-rose-200 active:scale-95 transition-transform"><Trash2 size={14}/> 清除重置</button>
                         </div>
 
-                        {/* Products */}
+                        {/* Products List */}
                         {activeTab === 'products' && filteredGroupedProducts.map(g => (
-                            <div key={g.name} onClick={() => setSelectedGroupName(g.name)} className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 flex justify-between items-center cursor-pointer active:scale-98">
+                            <div key={g.name} onClick={() => setSelectedGroupName(g.name)} className="bg-white rounded-3xl p-5 shadow-soft border border-cream-200 flex justify-between items-center cursor-pointer active:scale-[0.99] transition-all hover:border-latte-200">
                                 <div className="flex-1">
-                                    <h4 className="font-black text-slate-800 text-lg">{g.name}</h4>
-                                    <div className="flex gap-3 mt-1 text-xs text-slate-500">
-                                        <span>喊 {g.totalAllocated}</span><span>配 {g.totalConfirmed}</span><span>現 {g.totalSpot}</span>
+                                    <h4 className="font-bold text-latte-800 text-lg mb-2">{g.name}</h4>
+                                    <div className="flex gap-2 text-xs text-latte-600 font-bold">
+                                        <span className="bg-cream-100 px-2.5 py-1 rounded-lg border border-cream-200 text-latte-500">喊 {g.totalAllocated}</span>
+                                        <span className="bg-cream-100 px-2.5 py-1 rounded-lg border border-cream-200 text-latte-500">配 {g.totalConfirmed}</span>
+                                        <span className="bg-cream-100 px-2.5 py-1 rounded-lg border border-cream-200 text-latte-500">現 {g.totalSpot}</span>
                                     </div>
                                 </div>
-                                <ChevronRight className="text-slate-300" />
+                                <div className="w-10 h-10 rounded-full bg-cream-50 flex items-center justify-center text-latte-300"><ChevronRight size={20} /></div>
                             </div>
                         ))}
 
                         {/* Dashboard */}
                         {activeTab === 'dashboard' && (
-                            <div className="grid grid-cols-2 gap-4">
-                                <div onClick={() => setShowPurchaseList(true)} className="bg-rose-500 text-white p-4 rounded-3xl shadow-lg relative overflow-hidden cursor-pointer">
-                                    <p className="text-xs font-bold opacity-80">需補貨</p>
-                                    <p className="text-2xl font-black mt-1">{stats.totalShortageQty} 件</p>
+                            <div className="grid grid-cols-2 gap-4 animate-in">
+                                <div onClick={() => setShowPurchaseList(true)} className="bg-[#D98E73] text-white p-6 rounded-3xl shadow-lg shadow-[#D98E73]/30 relative overflow-hidden cursor-pointer group transition-transform active:scale-95">
+                                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><ShoppingCart size={80}/></div>
+                                    <p className="text-xs font-bold opacity-90 tracking-wider">需補貨</p>
+                                    <p className="text-4xl font-black mt-2">{stats.totalShortageQty} <span className="text-sm font-normal opacity-80">件</span></p>
                                 </div>
-                                <div onClick={() => setShowRevenueList(true)} className="bg-amber-500 text-white p-4 rounded-3xl shadow-lg relative overflow-hidden cursor-pointer">
-                                    <p className="text-xs font-bold opacity-80">總營業額</p>
-                                    <p className="text-2xl font-black mt-1">${stats.totalRevenue.toLocaleString()}</p>
+                                <div onClick={() => setShowRevenueList(true)} className="bg-[#BF9E85] text-white p-6 rounded-3xl shadow-lg shadow-[#BF9E85]/30 relative overflow-hidden cursor-pointer group transition-transform active:scale-95">
+                                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><DollarSign size={80}/></div>
+                                    <p className="text-xs font-bold opacity-90 tracking-wider">總營業額</p>
+                                    <p className="text-4xl font-black mt-2"><span className="text-lg opacity-80">$</span>{stats.totalRevenue.toLocaleString()}</p>
                                 </div>
                             </div>
                         )}
 
-                        {/* Customers */}
+                        {/* Customers List */}
                         {activeTab === 'customers' && filteredCustomers.map(c => (
-                            <div key={c.name} onClick={() => setSelectedCustomerDetail(c)} className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 flex justify-between items-center cursor-pointer mb-2">
-                                <div className="flex items-center gap-3"><div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-bold">{c.name[0]}</div><h4 className="font-bold text-slate-800">{c.name}</h4></div>
-                                <p className="font-black text-indigo-600">${c.totalSpent.toLocaleString()}</p>
+                            <div key={c.name} onClick={() => setSelectedCustomerDetail(c)} className="bg-white rounded-3xl p-5 shadow-soft border border-cream-200 flex justify-between items-center cursor-pointer mb-2 active:scale-[0.99] transition-all hover:border-latte-200">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 bg-cream-100 text-latte-600 rounded-full flex items-center justify-center font-bold border border-cream-200 text-lg shadow-sm">{c.name[0]}</div>
+                                    <h4 className="font-bold text-latte-800 text-lg">{c.name}</h4>
+                                </div>
+                                <p className="font-black text-latte-500 text-lg">${c.totalSpent.toLocaleString()}</p>
                             </div>
                         ))}
 
-                        {/* Arrivals */}
+                        {/* Arrivals List */}
                         {activeTab === 'arrivals' && (
                             <div className="space-y-6 pb-24">
                                 <div>
-                                    <h3 className="text-lg font-black text-slate-800 mb-3 px-2 flex gap-2"><BoxSelect size={20} className="text-indigo-600"/> 待出貨 / 到貨中</h3>
+                                    <h3 className="text-lg font-black text-latte-800 mb-4 px-2 flex gap-2 items-center"><BoxSelect size={20} className="text-latte-500"/> 待出貨 / 到貨中</h3>
                                     {filteredPendingArrivals.map(c => (
-                                        <div key={c.name} onClick={() => setSelectedArrivalCustomer({...c, source: 'pending'})} className="bg-white rounded-3xl shadow-sm border border-slate-100 p-4 mb-3 flex justify-between items-center cursor-pointer relative overflow-hidden">
-                                            {c.isFullyArrived && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-emerald-500"></div>}
-                                            <div className="flex items-center gap-3">
-                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${c.isFullyArrived ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>{c.name[0]}</div>
+                                        <div key={c.name} onClick={() => setSelectedArrivalCustomer({...c, source: 'pending'})} className="bg-white rounded-3xl shadow-soft border border-cream-200 p-5 mb-3 flex justify-between items-center cursor-pointer relative overflow-hidden active:scale-[0.99] transition-all">
+                                            {c.isFullyArrived && <div className="absolute left-0 top-0 bottom-0 w-2 bg-emerald-400"></div>}
+                                            <div className="flex items-center gap-4">
+                                                <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg shadow-sm border border-transparent ${c.isFullyArrived ? 'bg-emerald-100 text-emerald-600 border-emerald-200' : 'bg-cream-100 text-latte-300'}`}>{c.name[0]}</div>
                                                 <div>
-                                                    <h4 className="font-bold text-slate-800 flex gap-2 items-center">{c.name} {c.isFullyArrived && <span className="text-[10px] bg-emerald-100 text-emerald-600 px-2 rounded-full">全到</span>}</h4>
-                                                    <p className="text-xs text-slate-500">共 {c.totalQty} 件 · 已配 {c.allocatedQty}</p>
+                                                    <h4 className="font-bold text-latte-800 flex gap-2 items-center text-lg">{c.name} {c.isFullyArrived && <span className="text-[10px] bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-200">全到</span>}</h4>
+                                                    <p className="text-xs text-latte-400 mt-1 font-bold">共 {c.totalQty} 件 · 已配 {c.allocatedQty}</p>
                                                 </div>
                                             </div>
-                                            {c.isFullyArrived && <button onClick={(e) => { e.stopPropagation(); handleShipCustomer(c.name); }} className="bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow animate-pulse"><Truck size={14}/> 確認出貨</button>}
+                                            {c.isFullyArrived && <button onClick={(e) => { e.stopPropagation(); handleShipCustomer(c.name); }} className="bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1 shadow-md shadow-emerald-200 animate-pulse hover:scale-105 transition-transform"><Truck size={16}/> 確認出貨</button>}
                                         </div>
                                     ))}
                                 </div>
-                                <div className="opacity-60">
-                                    <h3 className="text-lg font-black text-slate-500 mb-3 px-2 flex gap-2"><PackageCheck size={20}/> 已出貨紀錄</h3>
+                                <div className="opacity-70 grayscale-[0.5]">
+                                    <h3 className="text-lg font-black text-latte-400 mb-4 px-2 flex gap-2 items-center"><PackageCheck size={20}/> 已出貨紀錄</h3>
                                     {filteredShippedArrivals.map(c => (
-                                        <div key={c.name} onClick={() => setSelectedArrivalCustomer({...c, source: 'shipped'})} className="bg-slate-50 rounded-3xl p-4 border border-slate-100 mb-3 flex justify-between items-center cursor-pointer">
-                                            <span className="font-bold text-slate-600">{c.name}</span>
-                                            <span className="text-xs bg-gray-200 px-2 py-1 rounded-full">已出貨</span>
+                                        <div key={c.name} onClick={() => setSelectedArrivalCustomer({...c, source: 'shipped'})} className="bg-cream-50 rounded-3xl p-4 border border-cream-200 mb-3 flex justify-between items-center cursor-pointer">
+                                            <span className="font-bold text-latte-600">{c.name}</span>
+                                            <span className="text-xs bg-latte-200 text-latte-600 px-3 py-1 rounded-full font-bold">已出貨</span>
                                         </div>
                                     ))}
                                 </div>
@@ -544,57 +585,197 @@
                         )}
                     </main>
 
-                    <div className="fixed bottom-6 right-6 z-[100]"><button onClick={() => setShowProxyOrder(true)} className="w-16 h-16 bg-indigo-600 text-white rounded-full shadow-2xl flex items-center justify-center active:scale-95 transition-all"><Plus size={32}/></button></div>
+                    {/* FAB (懸浮新增按鈕) */}
+                    <div className="fixed bottom-8 right-6 z-[100]"><button onClick={() => setShowProxyOrder(true)} className="w-16 h-16 bg-latte-500 text-white rounded-full shadow-2xl shadow-latte-500/40 flex items-center justify-center active:scale-95 transition-all hover:bg-latte-600 hover:-translate-y-1"><Plus size={32}/></button></div>
 
-                    {/* Modals */}
+                    {/* --- Modals (彈出視窗) --- */}
+                    
                     {/* Settings Modal */}
                     {showSettings && (
-                        <div className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4">
-                            <div className="bg-white rounded-3xl w-full max-w-md p-6 space-y-4">
-                                <h3 className="font-bold border-b pb-2">API 設定</h3>
-                                <p className="text-sm text-slate-500">請輸入 Google Apps Script 網頁應用程式網址</p>
-                                <input type="text" placeholder="https://script.google.com/..." className="w-full border p-3 rounded-xl" value={apiUrl} onChange={e=>setApiUrl(e.target.value)}/>
-                                <div className="flex gap-2">
-                                    <button onClick={()=>setShowSettings(false)} className="flex-1 bg-indigo-600 text-white py-3 rounded-lg font-bold">儲存</button>
-                                    <button onClick={()=>setShowSettings(false)} className="flex-1 bg-slate-100 text-slate-500 py-3 rounded-lg font-bold">取消</button>
+                        <div className="fixed inset-0 bg-latte-900/40 backdrop-blur-[2px] z-[200] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-3xl w-full max-w-md p-6 space-y-4 shadow-2xl animate-in">
+                                <h3 className="font-bold border-b border-cream-200 pb-3 text-latte-800 text-lg">API 設定</h3>
+                                <p className="text-sm text-latte-500">請輸入 Google Apps Script 網頁應用程式網址</p>
+                                <input type="text" placeholder="https://script.google.com/..." className="w-full bg-cream-50 border border-cream-200 p-4 rounded-xl focus:border-latte-400 outline-none text-latte-800 shadow-inner-soft" value={apiUrl} onChange={e=>setApiUrl(e.target.value)}/>
+                                <div className="flex gap-3 pt-2">
+                                    <button onClick={()=>setShowSettings(false)} className="flex-1 bg-[#AEC8DB] text-white py-3 rounded-xl font-bold shadow-lg shadow-[#AEC8DB]/20 active:scale-95 transition-transform">儲存</button>
+                                    <button onClick={()=>setShowSettings(false)} className="flex-1 bg-cream-100 text-latte-500 py-3 rounded-xl font-bold hover:bg-cream-200 active:scale-95 transition-transform">取消</button>
                                 </div>
                             </div>
                         </div>
                     )}
-                    {showProxyOrder && <div className="fixed inset-0 bg-black/50 z-[200] flex items-end md:items-center justify-center p-4"><div className="bg-white rounded-3xl w-full max-w-md p-5 space-y-4"><h3 className="font-bold border-b pb-2">代客加單/入庫</h3><input placeholder="商品名稱" className="w-full border p-2 rounded" list="pl" value={proxyForm.productName} onChange={handleProxyProductChange}/><datalist id="pl">{[...new Set(products.map(p=>p.name))].map(n=><option key={n} value={n}/>)}</datalist><div className="flex gap-2"><input placeholder="款式" className="w-full border p-2 rounded" list="vl" value={proxyForm.variant} onChange={e=>setProxyForm({...proxyForm,variant:e.target.value})}/><datalist id="vl">{availableVariants.map(v=><option key={v} value={v}/>)}</datalist><input type="number" placeholder="$" className="w-20 border p-2 rounded" value={proxyForm.price} onChange={e=>setProxyForm({...proxyForm,price:e.target.value})}/></div><div className="flex gap-2"><input placeholder="顧客(選填)" className="w-full border p-2 rounded" list="cl" value={proxyForm.customer} onChange={e=>setProxyForm({...proxyForm,customer:e.target.value})}/><datalist id="cl">{customerList.map(c=><option key={c.name} value={c.name}/>)}</datalist><input type="number" placeholder="數" className="w-20 border p-2 rounded" value={proxyForm.qty} onChange={e=>setProxyForm({...proxyForm,qty:e.target.value})}/></div><input type="number" placeholder="購買/現貨數量" className="w-full border p-2 rounded bg-indigo-50" value={proxyForm.purchasedQty} onChange={e=>setProxyForm({...proxyForm,purchasedQty:e.target.value})}/><button onClick={handleAddOrder} className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold">確認</button><button onClick={()=>setShowProxyOrder(false)} className="w-full mt-2 text-slate-400 text-sm">取消</button></div></div>}
-
-                    {showRevenueList && <div className="fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4"><div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col"><div className="p-4 border-b flex justify-between"><h3>營收總覽</h3><button onClick={()=>setShowRevenueList(false)}><X/></button></div><div className="flex-1 overflow-y-auto p-4 space-y-2">{revenueCustomers.map(c=><div key={c.name} onClick={()=>{setShowRevenueList(false);setSelectedCustomerDetail(c)}} className="flex justify-between p-3 border rounded-xl items-center cursor-pointer"><span className="font-bold">{c.name}</span><span>${c.totalSpent.toLocaleString()}</span></div>)}</div></div></div>}
                     
-                    {showPurchaseList && <div className="fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4"><div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col"><div className="p-4 border-b flex justify-between"><h3>採購清單</h3><button onClick={()=>setShowPurchaseList(false)}><X/></button></div><div className="flex-1 overflow-y-auto p-4 space-y-2">{purchaseList.map(p=><div key={p.id} className="flex justify-between p-3 border-b"><div><div className="font-bold">{p.name}</div><div className="text-xs text-slate-500">{p.variant}</div></div><div className="flex items-center gap-2"><span className="text-xs text-slate-400">缺</span>{editingPurchaseQtyId===p.id?<input autoFocus className="w-12 border rounded text-center" type="number" defaultValue={p.shortage} onBlur={e=>handleUpdatePurchaseQty(p.id,e.target.value)}/>:<span onClick={()=>setEditingPurchaseQtyId(p.id)} className="text-rose-600 font-black text-lg cursor-pointer">{p.shortage}</span>}</div></div>)}</div></div></div>}
-
-                    {selectedGroupName && <div className="fixed inset-0 bg-black/50 z-[150] flex items-end md:items-center justify-center p-0 md:p-4"><div className="bg-white rounded-t-[30px] md:rounded-3xl w-full max-w-md h-[85vh] flex flex-col"><div className="p-6 border-b flex justify-between"><h3>{selectedGroupName}</h3><button onClick={()=>setSelectedGroupName(null)}><X/></button></div><div className="flex-1 overflow-y-auto p-4 space-y-4">
-                        <div className="bg-slate-50 p-3 rounded-xl"><table className="w-full text-xs text-center"><thead><tr className="text-slate-400"><th>款式</th><th>已配</th><th>待配</th><th>現貨</th>{isEditingProduct&&<th></th>}</tr></thead><tbody>{productsWithStats.filter(p=>p.name===selectedGroupName).map(p=><tr key={p.id}><td className="py-2 text-left">{p.variant}</td><td className="text-indigo-600">{p.confirmed}</td><td className="text-rose-500">{p.pending}</td><td>{isEditingProduct?<input className="w-10 text-center border rounded" defaultValue={p.spot} onBlur={e=>handleUpdateProductInfo(p.id,'spot',e.target.value)}/>:p.spot}</td>{isEditingProduct&&<td><button onClick={()=>handleDeleteProduct(p.id)} className="text-rose-500"><Trash2 size={14}/></button></td>}</tr>)}</tbody></table></div>
-                        <div><h4 className="text-xs font-bold text-slate-400 mb-2">配貨明細 (點擊修改數量)</h4>{getGroupAllocations(selectedGroupName).map((r,i)=><div key={i} className="flex justify-between items-center p-3 border rounded-xl mb-2"><div className="flex items-center gap-3"><button onClick={()=>toggleAllocation(r.orderId,r.productId,r.allocatedQty,r.qty)} className={`w-6 h-6 rounded border flex items-center justify-center ${r.isAllocated?'bg-indigo-600 text-white':''}`}><CheckSquare size={14}/></button><div><div className="font-bold text-sm">{r.customer}</div><div className="text-[10px] text-slate-500">{r.variant}</div></div></div><div className="flex items-center gap-1 text-sm"><span className="text-slate-400 text-xs">配</span>{editingAllocatedQtyId===`${r.orderId}-${r.productId}-detail`?<input autoFocus className="w-8 text-center border-b border-indigo-500 outline-none bg-transparent" defaultValue={r.allocatedQty} onBlur={e=>handleUpdateAllocatedQty(r.orderId,r.productId,e.target.value)}/>:<span onClick={()=>setEditingAllocatedQtyId(`${r.orderId}-${r.productId}-detail`)} className="font-bold text-indigo-600 cursor-pointer">{r.allocatedQty}</span>}<span className="text-slate-400 text-xs">/ 喊</span>{editingOrderQtyId===`${r.orderId}-${r.productId}-detail`?<input autoFocus className="w-8 text-center border-b border-slate-500 outline-none bg-transparent" defaultValue={r.qty} onBlur={e=>handleUpdateOrderQty(r.orderId,r.productId,e.target.value)}/>:<span onClick={()=>setEditingOrderQtyId(`${r.orderId}-${r.productId}-detail`)} className="font-bold cursor-pointer">{r.qty}</span>}</div></div>)}</div>
-                    </div><div className="p-4 border-t flex justify-between"><button onClick={()=>{setProxyForm(prev=>({...prev,productName:selectedGroupName}));setShowProxyOrder(true)}} className="text-sm bg-slate-100 px-3 py-2 rounded-lg flex gap-1"><Plus size={16}/> 加單</button><button onClick={()=>setIsEditingProduct(!isEditingProduct)} className="text-sm bg-slate-100 px-3 py-2 rounded-lg flex gap-1"><Edit size={16}/> 編輯</button></div></div></div>}
-
-                    {selectedCustomerDetail && currentSelectedCustomer && (
-                        <div className="fixed inset-0 bg-black/50 z-[160] flex items-end md:items-center justify-center p-0 md:p-4">
-                            <div className="bg-white rounded-t-[30px] md:rounded-3xl w-full max-w-md h-[85vh] flex flex-col">
-                                <div className="p-6 border-b flex justify-between items-start">
-                                    <div><h3 className="text-xl font-bold">{currentSelectedCustomer.name}</h3><div className="text-xs text-indigo-600 font-bold mt-1">總額: ${currentSelectedCustomer.totalSpent.toLocaleString()}</div></div>
-                                    <div className="flex gap-2">
-                                        <button onClick={()=>handleExportToImage(currentSelectedCustomer)} className="p-2 bg-slate-100 rounded-full flex gap-1 text-xs items-center font-bold" title="匯出圖片"><ImageIcon size={16}/> 存成圖片</button>
-                                        <button onClick={()=>{setProxyForm(prev=>({...prev,customer:currentSelectedCustomer.name}));setShowProxyOrder(true)}} className="p-2 bg-slate-100 rounded-full"><Plus size={18}/></button>
-                                        <button onClick={()=>setSelectedCustomerDetail(null)} className="p-2 bg-slate-100 rounded-full"><X size={18}/></button>
+                    {/* Proxy Order Modal (代客加單) */}
+                    {showProxyOrder && (
+                        <div className="fixed inset-0 bg-latte-900/40 backdrop-blur-[2px] z-[200] flex items-end md:items-center justify-center p-4">
+                            <div className="bg-white rounded-[30px] w-full max-w-md p-6 space-y-4 shadow-2xl animate-in">
+                                <h3 className="font-bold border-b border-cream-200 pb-3 text-latte-800 text-lg flex items-center gap-2"><Plus size={20} className="text-[#AEC8DB]"/> 代客加單 / 入庫</h3>
+                                <div className="space-y-3">
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-latte-400 ml-1">商品名稱</label>
+                                        <input placeholder="輸入或選擇商品..." className="w-full bg-cream-50 border border-cream-200 p-3 rounded-xl focus:border-latte-400 outline-none text-latte-800 placeholder:text-latte-300 shadow-inner-soft" list="pl" value={proxyForm.productName} onChange={handleProxyProductChange}/><datalist id="pl">{[...new Set(products.map(p=>p.name))].map(n=><option key={n} value={n}/>)}</datalist>
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <div className="flex-1 space-y-1">
+                                            <label className="text-xs font-bold text-latte-400 ml-1">款式</label>
+                                            <input placeholder="款式" className="w-full bg-cream-50 border border-cream-200 p-3 rounded-xl focus:border-latte-400 outline-none text-latte-800 placeholder:text-latte-300 shadow-inner-soft" list="vl" value={proxyForm.variant} onChange={e=>setProxyForm({...proxyForm,variant:e.target.value})}/><datalist id="vl">{availableVariants.map(v=><option key={v} value={v}/>)}</datalist>
+                                        </div>
+                                        <div className="w-24 space-y-1">
+                                            <label className="text-xs font-bold text-latte-400 ml-1">價格</label>
+                                            <input type="number" placeholder="$" className="w-full bg-cream-50 border border-cream-200 p-3 rounded-xl focus:border-latte-400 outline-none text-latte-800 text-center placeholder:text-latte-300 shadow-inner-soft" value={proxyForm.price} onChange={e=>setProxyForm({...proxyForm,price:e.target.value})}/>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <div className="flex-1 space-y-1">
+                                            <label className="text-xs font-bold text-latte-400 ml-1">顧客 (選填)</label>
+                                            <input placeholder="輸入顧客姓名..." className="w-full bg-cream-50 border border-cream-200 p-3 rounded-xl focus:border-latte-400 outline-none text-latte-800 placeholder:text-latte-300 shadow-inner-soft" list="cl" value={proxyForm.customer} onChange={e=>setProxyForm({...proxyForm,customer:e.target.value})}/><datalist id="cl">{customerList.map(c=><option key={c.name} value={c.name}/>)}</datalist>
+                                        </div>
+                                        <div className="w-24 space-y-1">
+                                            <label className="text-xs font-bold text-latte-400 ml-1">數量</label>
+                                            <input type="number" placeholder="數" className="w-full bg-cream-50 border border-cream-200 p-3 rounded-xl focus:border-latte-400 outline-none text-latte-800 text-center placeholder:text-latte-300 shadow-inner-soft" value={proxyForm.qty} onChange={e=>setProxyForm({...proxyForm,qty:e.target.value})}/>
+                                        </div>
+                                    </div>
+                                    <div className="pt-2 border-t border-cream-200 mt-2">
+                                        <label className="text-xs text-latte-500 font-bold ml-1 mb-1 block flex justify-between">同時入庫現貨數量 <span className="text-latte-300 font-normal">若僅入庫不接單，顧客欄留空</span></label>
+                                        <input type="number" placeholder="0" className="w-full bg-latte-50 border border-latte-200 p-3 rounded-xl focus:border-latte-400 outline-none text-latte-800 text-center font-bold" value={proxyForm.purchasedQty} onChange={e=>setProxyForm({...proxyForm,purchasedQty:e.target.value})}/>
                                     </div>
                                 </div>
+                                <div className="pt-2 flex flex-col gap-2">
+                                    <button onClick={handleAddOrder} className="w-full bg-[#AEC8DB] text-white py-3.5 rounded-xl font-bold shadow-lg shadow-[#AEC8DB]/20 active:scale-95 transition-transform hover:brightness-105">確認新增</button>
+                                    <button onClick={()=>setShowProxyOrder(false)} className="w-full py-2 text-latte-400 text-sm font-bold hover:text-latte-600">取消</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Full Screen Modals (Revenue/Purchase) */}
+                    {showRevenueList && (
+                        <div className="fixed inset-0 bg-latte-900/40 backdrop-blur-[2px] z-[150] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col shadow-2xl animate-in">
+                                <div className="p-5 border-b border-cream-200 flex justify-between items-center bg-cream-50 rounded-t-3xl"><h3 className="font-bold text-latte-800 text-lg flex gap-2 items-center"><DollarSign size={20}/> 營收總覽</h3><button onClick={()=>setShowRevenueList(false)} className="w-8 h-8 rounded-full bg-cream-200 text-latte-500 flex items-center justify-center hover:bg-latte-200"><X size={18}/></button></div>
                                 <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                                    {currentSelectedCustomer.items.map((item,idx)=>(
-                                        <div key={idx} className="flex justify-between items-center p-3 border-b">
-                                            <div><div className="font-bold text-sm">{item.name}</div><div className="text-xs text-slate-500">{item.variant} · ${item.finalPrice}</div></div>
-                                            <div className="text-right flex items-center gap-1 justify-end">
-                                                <span className="text-xs text-slate-400">x</span>
-                                                {editingOrderQtyId===`${item.orderId}-${item.productId}` ? 
-                                                    <input autoFocus className="w-8 text-center border rounded" defaultValue={item.qty} onBlur={e=>handleUpdateOrderQty(item.orderId,item.productId,e.target.value)}/> :
-                                                    <span onClick={()=>setEditingOrderQtyId(`${item.orderId}-${item.productId}`)} className="font-bold cursor-pointer">{item.qty}</span>
+                                    {revenueCustomers.map(c=>
+                                        <div key={c.name} onClick={()=>{setShowRevenueList(false);setSelectedCustomerDetail(c)}} className="flex justify-between p-4 bg-white rounded-2xl items-center cursor-pointer border border-cream-100 shadow-sm hover:border-latte-300 hover:shadow-soft transition-all">
+                                            <span className="font-bold text-latte-800 text-lg">{c.name}</span>
+                                            <span className="font-bold text-latte-600 bg-cream-50 px-3 py-1 rounded-lg border border-cream-200">${c.totalSpent.toLocaleString()}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {showPurchaseList && (
+                        <div className="fixed inset-0 bg-latte-900/40 backdrop-blur-[2px] z-[150] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col shadow-2xl animate-in">
+                                <div className="p-5 border-b border-cream-200 flex justify-between items-center bg-cream-50 rounded-t-3xl"><h3 className="font-bold text-latte-800 text-lg flex gap-2 items-center"><ShoppingCart size={20}/> 採購清單</h3><button onClick={()=>setShowPurchaseList(false)} className="w-8 h-8 rounded-full bg-cream-200 text-latte-500 flex items-center justify-center hover:bg-latte-200"><X size={18}/></button></div>
+                                <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                                    {purchaseList.map(p=>
+                                        <div key={p.id} className="flex justify-between items-center p-4 bg-white rounded-2xl border border-cream-100 shadow-sm">
+                                            <div><div className="font-bold text-latte-800 text-lg">{p.name}</div><div className="text-xs text-latte-400 mt-1 font-bold bg-cream-100 inline-block px-2 py-0.5 rounded">{p.variant}</div></div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-latte-400 font-bold">缺</span>
+                                                {editingPurchaseQtyId===p.id?
+                                                    <input autoFocus className="w-16 border border-latte-300 rounded-lg text-center py-1 text-latte-800 font-bold outline-none bg-cream-50" type="number" defaultValue={p.shortage} onBlur={e=>handleUpdatePurchaseQty(p.id,e.target.value)}/>:
+                                                    <span onClick={()=>setEditingPurchaseQtyId(p.id)} className="text-[#D98E73] font-black text-2xl cursor-pointer hover:bg-cream-50 px-2 rounded transition-colors">{p.shortage}</span>
                                                 }
-                                                <div className="text-xs text-indigo-600 font-bold ml-2">${item.itemTotal}</div>
-                                                <button onClick={()=>handleDeleteOrderItem(item.orderId,item.productId)} className="ml-1 text-slate-300 hover:text-rose-500"><Trash2 size={12}/></button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Group Detail Modal (商品群組詳情) */}
+                    {selectedGroupName && (
+                        <div className="fixed inset-0 bg-latte-900/40 backdrop-blur-[2px] z-[150] flex items-end md:items-center justify-center p-0 md:p-4">
+                            <div className="bg-white rounded-t-[30px] md:rounded-3xl w-full max-w-md h-[85vh] flex flex-col shadow-2xl animate-in">
+                                <div className="p-6 border-b border-cream-200 flex justify-between items-center bg-cream-50 rounded-t-[30px] md:rounded-t-3xl">
+                                    <h3 className="font-bold text-latte-800 text-xl">{selectedGroupName}</h3>
+                                    <button onClick={()=>setSelectedGroupName(null)} className="w-8 h-8 rounded-full bg-cream-200 text-latte-500 flex items-center justify-center hover:bg-latte-200"><X size={18}/></button>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-5 space-y-6">
+                                    <div className="bg-cream-50 p-4 rounded-2xl border border-cream-100 shadow-inner-soft">
+                                        <table className="w-full text-xs text-center">
+                                            <thead>
+                                                <tr className="text-latte-400 font-bold border-b border-cream-200"><th className="pb-3 text-left pl-2">款式</th><th className="pb-3">已配</th><th className="pb-3">待配</th><th className="pb-3">現貨</th>{isEditingProduct&&<th className="pb-3"></th>}</tr>
+                                            </thead>
+                                            <tbody>
+                                                {productsWithStats.filter(p=>p.name===selectedGroupName).map(p=>
+                                                    <tr key={p.id} className="border-b border-cream-100 last:border-0 hover:bg-white/50 transition-colors">
+                                                        <td className="py-3 text-left pl-2 font-bold text-latte-700">{p.variant}</td>
+                                                        <td className="text-latte-500 font-bold">{p.confirmed}</td>
+                                                        <td className="text-[#D98E73] font-bold">{p.pending}</td>
+                                                        <td>{isEditingProduct?<input className="w-12 text-center border border-latte-200 rounded py-1 bg-white" defaultValue={p.spot} onBlur={e=>handleUpdateProductInfo(p.id,'spot',e.target.value)}/>:<span className="font-bold text-latte-800 bg-white px-2 py-1 rounded border border-transparent">{p.spot}</span>}</td>
+                                                        {isEditingProduct&&<td><button onClick={()=>handleDeleteProduct(p.id)} className="text-rose-400 hover:text-rose-600"><Trash2 size={16}/></button></td>}
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div>
+                                        <h4 className="text-xs font-bold text-latte-400 mb-3 ml-1 flex items-center gap-1"><Split size={14}/> 配貨明細 (點擊數量修改)</h4>
+                                        {getGroupAllocations(selectedGroupName).map((r,i)=>
+                                            <div key={i} className={`flex justify-between items-center p-3 rounded-xl mb-2 border transition-all ${r.isAllocated ? 'bg-latte-50 border-latte-200' : 'bg-white border-cream-200 hover:border-latte-200'}`}>
+                                                <div className="flex items-center gap-3">
+                                                    <button onClick={()=>toggleAllocation(r.orderId,r.productId,r.allocatedQty,r.qty)} className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-colors active:scale-90 ${r.isAllocated?'bg-latte-500 border-latte-500 text-white':'border-latte-200 text-transparent hover:border-latte-400'}`}><CheckSquare size={14}/></button>
+                                                    <div><div className="font-bold text-sm text-latte-800">{r.customer}</div><div className="text-[10px] text-latte-400 font-bold">{r.variant}</div></div>
+                                                </div>
+                                                <div className="flex items-center gap-1 text-sm bg-white px-2 py-1 rounded-lg border border-cream-200 shadow-sm">
+                                                    <span className="text-[10px] text-latte-400">配</span>
+                                                    {editingAllocatedQtyId===`${r.orderId}-${r.productId}-detail`?
+                                                        <input autoFocus className="w-8 text-center border-b border-latte-500 outline-none bg-transparent font-bold text-latte-800" defaultValue={r.allocatedQty} onBlur={e=>handleUpdateAllocatedQty(r.orderId,r.productId,e.target.value)}/>:
+                                                        <span onClick={()=>setEditingAllocatedQtyId(`${r.orderId}-${r.productId}-detail`)} className="font-bold text-latte-600 cursor-pointer hover:bg-cream-100 px-1 rounded">{r.allocatedQty}</span>
+                                                    }
+                                                    <span className="text-[10px] text-latte-300">/</span>
+                                                    <span className="text-[10px] text-latte-400">喊</span>
+                                                    {editingOrderQtyId===`${r.orderId}-${r.productId}-detail`?
+                                                        <input autoFocus className="w-8 text-center border-b border-latte-300 outline-none bg-transparent font-bold text-latte-800" defaultValue={r.qty} onBlur={e=>handleUpdateOrderQty(r.orderId,r.productId,e.target.value)}/>:
+                                                        <span onClick={()=>setEditingOrderQtyId(`${r.orderId}-${r.productId}-detail`)} className="font-bold text-latte-800 cursor-pointer hover:bg-cream-100 px-1 rounded">{r.qty}</span>
+                                                    }
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="p-4 border-t border-cream-200 flex justify-between bg-white rounded-b-[30px] md:rounded-b-3xl">
+                                    <button onClick={()=>{setProxyForm(prev=>({...prev,productName:selectedGroupName}));setShowProxyOrder(true)}} className="text-sm bg-cream-100 text-latte-600 font-bold px-4 py-3 rounded-xl flex gap-2 items-center hover:bg-cream-200 transition-colors active:scale-95"><Plus size={16}/> 加單</button>
+                                    <button onClick={()=>setIsEditingProduct(!isEditingProduct)} className={`text-sm px-4 py-3 rounded-xl flex gap-2 items-center font-bold transition-colors active:scale-95 ${isEditingProduct?'bg-[#AEC8DB] text-white shadow-lg shadow-[#AEC8DB]/20':'bg-cream-100 text-latte-600 hover:bg-cream-200'}`}><Edit size={16}/> {isEditingProduct ? '完成編輯' : '編輯商品'}</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Customer Detail Modal (顧客詳情) */}
+                    {selectedCustomerDetail && currentSelectedCustomer && (
+                        <div className="fixed inset-0 bg-latte-900/40 backdrop-blur-[2px] z-[160] flex items-end md:items-center justify-center p-0 md:p-4">
+                            <div className="bg-white rounded-t-[30px] md:rounded-3xl w-full max-w-md h-[85vh] flex flex-col shadow-2xl animate-in">
+                                <div className="p-6 border-b border-cream-200 flex justify-between items-start bg-cream-50 rounded-t-[30px] md:rounded-t-3xl">
+                                    <div>
+                                        <h3 className="text-xl font-bold text-latte-800 flex items-center gap-2"><User size={20}/> {currentSelectedCustomer.name}</h3>
+                                        <div className="text-xs text-latte-500 font-bold mt-2 bg-white px-2 py-1 rounded-lg border border-cream-200 inline-block shadow-sm">總額: ${currentSelectedCustomer.totalSpent.toLocaleString()}</div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={()=>handleExportToImage(currentSelectedCustomer)} className="p-2.5 bg-white border border-cream-200 rounded-xl flex gap-1 text-xs items-center font-bold text-latte-600 shadow-sm active:scale-95 hover:bg-cream-50" title="匯出圖片"><ImageIcon size={18}/> 存圖</button>
+                                        <button onClick={()=>{setProxyForm(prev=>({...prev,customer:currentSelectedCustomer.name}));setShowProxyOrder(true)}} className="p-2.5 bg-[#AEC8DB] text-white rounded-xl shadow-md shadow-[#AEC8DB]/20 active:scale-95 hover:brightness-105"><Plus size={18}/></button>
+                                        <button onClick={()=>setSelectedCustomerDetail(null)} className="p-2.5 bg-cream-200 text-latte-600 rounded-xl active:scale-95 hover:bg-cream-300"><X size={18}/></button>
+                                    </div>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                    {currentSelectedCustomer.items.map((item,idx)=>(
+                                        <div key={idx} className="flex justify-between items-center p-4 bg-white border border-cream-200 rounded-2xl shadow-sm hover:border-latte-200 transition-colors">
+                                            <div><div className="font-bold text-sm text-latte-800">{item.name}</div><div className="text-xs text-latte-400 mt-1 font-bold">{item.variant} · ${item.finalPrice}</div></div>
+                                            <div className="text-right flex items-center gap-2 justify-end">
+                                                <div className="bg-cream-50 px-2 py-1 rounded-lg border border-cream-100 flex items-center gap-1">
+                                                    <span className="text-xs text-latte-400">x</span>
+                                                    {editingOrderQtyId===`${item.orderId}-${item.productId}` ? 
+                                                        <input autoFocus className="w-8 text-center border-b border-latte-500 outline-none bg-transparent font-bold text-latte-800" defaultValue={item.qty} onBlur={e=>handleUpdateOrderQty(item.orderId,item.productId,e.target.value)}/> :
+                                                        <span onClick={()=>setEditingOrderQtyId(`${item.orderId}-${item.productId}`)} className="font-bold cursor-pointer text-latte-800 hover:text-latte-500">{item.qty}</span>
+                                                    }
+                                                </div>
+                                                <div className="text-sm text-latte-600 font-black min-w-[3rem] text-right">${item.itemTotal}</div>
+                                                <button onClick={()=>handleDeleteOrderItem(item.orderId,item.productId)} className="ml-1 text-cream-300 hover:text-rose-500 transition-colors p-1"><Trash2 size={16}/></button>
                                             </div>
                                         </div>
                                     ))}
@@ -603,39 +784,41 @@
                         </div>
                     )}
                     
+                    {/* Arrival Check Modal (出貨檢核) */}
                     {currentSelectedArrivalCustomer && (
-                        <div className="fixed inset-0 bg-black/50 z-[150] flex items-end md:items-center justify-center p-0 md:p-4">
-                            <div className="bg-white rounded-t-[30px] md:rounded-3xl w-full max-w-md h-[85vh] flex flex-col">
-                                <div className="p-6 bg-slate-800 text-white rounded-t-[30px] flex justify-between items-start shrink-0">
-                                    <div><h3 className="text-xl font-bold">{currentSelectedArrivalCustomer.name}</h3><p className="text-xs opacity-70 mt-1">{isArrivalShipped ? '已出貨' : '配貨檢核'}</p></div>
-                                    <button onClick={()=>setSelectedArrivalCustomer(null)} className="bg-white/20 p-2 rounded-full"><X size={18}/></button>
+                        <div className="fixed inset-0 bg-latte-900/40 backdrop-blur-[2px] z-[150] flex items-end md:items-center justify-center p-0 md:p-4">
+                            <div className="bg-white rounded-t-[30px] md:rounded-3xl w-full max-w-md h-[85vh] flex flex-col shadow-2xl animate-in">
+                                <div className="p-6 bg-latte-800 text-cream-100 rounded-t-[30px] md:rounded-t-3xl flex justify-between items-start shrink-0 shadow-lg">
+                                    <div><h3 className="text-xl font-bold flex items-center gap-2"><Truck size={20}/> {currentSelectedArrivalCustomer.name}</h3><p className="text-xs opacity-70 mt-1 font-bold tracking-wide">{isArrivalShipped ? '已出貨歸檔' : '配貨出貨檢核'}</p></div>
+                                    <button onClick={()=>setSelectedArrivalCustomer(null)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors"><X size={18}/></button>
                                 </div>
-                                <div className="px-6 py-3 bg-slate-800 text-white flex justify-between items-center shrink-0">
-                                    <div className="text-xs opacity-80">進度: {currentSelectedArrivalCustomer.arrivedItemsCount} / {currentSelectedArrivalCustomer.totalItemsCount} 項</div>
-                                    {!isArrivalShipped && currentSelectedArrivalCustomer.isFullyArrived && <button onClick={()=>handleShipCustomer(currentSelectedArrivalCustomer.name)} className="bg-emerald-500 px-3 py-1 rounded-lg text-xs font-bold flex gap-1 shadow animate-pulse"><Truck size={14}/> 確認出貨</button>}
-                                    {isArrivalShipped && <button onClick={()=>handleUnshipCustomer(currentSelectedArrivalCustomer.name)} className="bg-amber-500 px-3 py-1 rounded-lg text-xs font-bold flex gap-1 shadow"><Undo2 size={14}/> 回復未出貨</button>}
+                                <div className="px-6 py-4 bg-latte-700 text-white flex justify-between items-center shrink-0 border-b border-latte-600">
+                                    <div className="text-xs opacity-90 font-bold">進度: {currentSelectedArrivalCustomer.items.filter(i=>(i.allocatedQty||0)>=i.qty).length} / {currentSelectedArrivalCustomer.items.length} 項</div>
+                                    {!isArrivalShipped && currentSelectedArrivalCustomer.isFullyArrived && <button onClick={()=>handleShipCustomer(currentSelectedArrivalCustomer.name)} className="bg-emerald-500 px-4 py-1.5 rounded-xl text-xs font-bold flex gap-1 shadow-lg shadow-emerald-500/30 animate-pulse hover:scale-105 transition-transform"><Truck size={14}/> 確認出貨</button>}
+                                    {isArrivalShipped && <button onClick={()=>handleUnshipCustomer(currentSelectedArrivalCustomer.name)} className="bg-amber-500 px-4 py-1.5 rounded-xl text-xs font-bold flex gap-1 shadow-lg shadow-amber-500/30 active:scale-95"><Undo2 size={14}/> 回復未出貨</button>}
                                 </div>
-                                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-cream-50">
                                     {currentSelectedArrivalCustomer.items.map((item,idx)=>{
                                         const isDone = (item.allocatedQty||0) >= item.qty;
                                         return (
-                                            <div key={idx} className={`flex justify-between items-center p-3 border rounded-xl ${isDone?'bg-emerald-50 border-emerald-200':'bg-white'} ${isArrivalShipped?'opacity-70':''}`}>
+                                            <div key={idx} className={`flex justify-between items-center p-3 border rounded-2xl shadow-sm transition-all ${isDone?'bg-emerald-50 border-emerald-200':'bg-white border-cream-200'} ${isArrivalShipped?'opacity-70 grayscale-[0.3]':''}`}>
                                                 <div className="flex items-center gap-3 flex-1">
                                                     {!isArrivalShipped ? (
-                                                        <button onClick={()=>toggleAllocation(item.orderId,item.productId,item.allocatedQty||0,item.qty)} className={`w-6 h-6 rounded border flex items-center justify-center ${isDone?'bg-emerald-500 border-emerald-500 text-white':''}`}><CheckSquare size={14}/></button>
-                                                    ) : <div className="w-6 h-6 flex items-center justify-center bg-gray-200 rounded text-gray-500"><PackageCheck size={14}/></div>}
-                                                    <div><div className="font-bold text-sm text-slate-700">{item.name}</div><div className="text-[10px] text-slate-500">{item.variant}</div></div>
+                                                        <button onClick={()=>toggleAllocation(item.orderId,item.productId,item.allocatedQty||0,item.qty)} className={`w-8 h-8 rounded-xl border flex items-center justify-center transition-all active:scale-90 ${isDone?'bg-emerald-500 border-emerald-500 text-white shadow-md shadow-emerald-200':'border-cream-300 text-transparent hover:border-latte-400'}`}><CheckSquare size={16}/></button>
+                                                    ) : <div className="w-8 h-8 flex items-center justify-center bg-gray-200 rounded-xl text-gray-500"><PackageCheck size={16}/></div>}
+                                                    <div><div className="font-bold text-sm text-latte-800">{item.name}</div><div className="text-[10px] text-latte-400 font-bold">{item.variant}</div></div>
                                                 </div>
-                                                <div className="flex items-center gap-1 text-sm">
-                                                    <span className="text-xs text-slate-400">配</span>
+                                                <div className="flex items-center gap-1 text-sm bg-white/50 px-2 py-1.5 rounded-xl border border-transparent">
+                                                    <span className="text-xs text-latte-400 font-bold">配</span>
                                                     {!isArrivalShipped && editingAllocatedQtyId===`${item.orderId}-${item.productId}-arrival` ?
-                                                        <input autoFocus className="w-8 text-center border-b border-indigo-500 outline-none bg-transparent" defaultValue={item.allocatedQty||0} onBlur={e=>handleUpdateAllocatedQty(item.orderId,item.productId,e.target.value)}/> :
-                                                        <span onClick={()=>!isArrivalShipped && setEditingAllocatedQtyId(`${item.orderId}-${item.productId}-arrival`)} className={`font-bold ${isDone?'text-emerald-600':'text-indigo-600'} ${!isArrivalShipped && 'cursor-pointer'}`}>{item.allocatedQty||0}</span>
+                                                        <input autoFocus className="w-8 text-center border-b border-emerald-500 outline-none bg-transparent font-bold text-emerald-700" defaultValue={item.allocatedQty||0} onBlur={e=>handleUpdateAllocatedQty(item.orderId,item.productId,e.target.value)}/> :
+                                                        <span onClick={()=>!isArrivalShipped && setEditingAllocatedQtyId(`${item.orderId}-${item.productId}-arrival`)} className={`font-black text-lg ${isDone?'text-emerald-500':'text-latte-300'} ${!isArrivalShipped && 'cursor-pointer hover:bg-cream-100 px-1 rounded'}`}>{item.allocatedQty||0}</span>
                                                     }
-                                                    <span className="text-xs text-slate-400">/ 訂</span>
+                                                    <span className="text-xs text-latte-300 font-bold">/</span>
+                                                    <span className="text-xs text-latte-400 font-bold">訂</span>
                                                     {!isArrivalShipped && editingOrderQtyId===`${item.orderId}-${item.productId}-arrival` ?
-                                                        <input autoFocus className="w-8 text-center border-b border-slate-500 outline-none bg-transparent" defaultValue={item.qty} onBlur={e=>handleUpdateOrderQty(item.orderId,item.productId,e.target.value)}/> :
-                                                        <span onClick={()=>!isArrivalShipped && setEditingOrderQtyId(`${item.orderId}-${item.productId}-arrival`)} className="font-bold cursor-pointer">{item.qty}</span>
+                                                        <input autoFocus className="w-8 text-center border-b border-latte-500 outline-none bg-transparent font-bold text-latte-800" defaultValue={item.qty} onBlur={e=>handleUpdateOrderQty(item.orderId,item.productId,e.target.value)}/> :
+                                                        <span onClick={()=>!isArrivalShipped && setEditingOrderQtyId(`${item.orderId}-${item.productId}-arrival`)} className="font-bold cursor-pointer text-latte-800 hover:bg-cream-100 px-1 rounded">{item.qty}</span>
                                                     }
                                                 </div>
                                             </div>
