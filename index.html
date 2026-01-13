@@ -41,20 +41,8 @@
             X, ChevronRight, ChevronUp, ClipboardList, User, ShoppingBag, ListOrdered, Tag, 
             Layers, Archive, CheckSquare, Square, Trash2, Edit, Save, Copy, CreditCard, 
             RotateCcw, Minus, TrendingUp, Wallet, BoxSelect, Undo2, PackageCheck, FileSpreadsheet,
-            Image as ImageIcon, Download, Loader2, Upload, Cloud, Settings, UploadCloud, DownloadCloud, FileJson, RefreshCw
+            Image as ImageIcon, Download, Loader2, Upload, Cloud, Settings, UploadCloud, DownloadCloud
         } from 'https://esm.sh/lucide-react@0.263.1?dev';
-
-        // Firebase Imports
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, setDoc, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
-
-        // Firebase Configuration
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
         const App = () => {
             // --- 1. State Definitions ---
@@ -236,7 +224,6 @@
 
             const purchaseList = useMemo(() => productsWithStats.filter(p => p.shortage > 0).map(p => ({ ...p })), [productsWithStats]);
             const revenueCustomers = useMemo(() => customerList.filter(c => c.totalSpent > 0).sort((a, b) => b.totalSpent - a.totalSpent), [customerList]);
-            const debtCustomers = useMemo(() => customerList.filter(c => c.debt > 0).sort((a,b)=> b.debt - a.debt), [customerList]);
 
             const filteredGroupedProducts = groupedProducts.filter(g => g.name.includes(searchQuery));
             const filteredCustomers = customerList.filter(c => c.name.includes(searchQuery));
@@ -319,7 +306,6 @@
                 reader.readAsText(file);
             };
 
-            // 新增：一鍵清除所有資料
             const handleClearData = () => {
                 if (confirm("⚠️ 警告：您確定要清除所有資料嗎？\n\n此操作將清空所有商品與訂單，讓您重新開始。\n請務必確認您已下載備份！")) {
                     setProducts([]);
@@ -593,7 +579,6 @@
                 notify("結單成功");
             };
 
-            // 確保函式在 JSX 中被呼叫
             const getGroupAllocations = (name) => {
                 const res = [];
                 products.filter(p=>p.name===name).forEach(p => {
