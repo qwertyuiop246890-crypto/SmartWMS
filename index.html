@@ -8,7 +8,7 @@
     <!-- 1. 載入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- 2. 載入 Babel 用於解析 JSX -->
+    <!-- 2. 載入 Babel 用於解析 JSX (與 ESM 配合) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
@@ -34,6 +34,15 @@
         * {
             -webkit-tap-highlight-color: transparent;
         }
+
+        /* Toggle Switch */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #4F46E5;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #4F46E5;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 font-sans">
@@ -43,11 +52,46 @@
         import React, { useState, useMemo, useEffect } from 'https://esm.sh/react@18.2.0?dev';
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client?dev';
         import { 
-            LayoutDashboard, Package, ShoppingCart, Users, Zap, Plus, ArrowRight, AlertCircle, 
-            CheckCircle2, Combine, Split, MessageCircle, Truck, DollarSign, Search, Filter, X, 
-            ChevronRight, ChevronUp, ClipboardList, User, ShoppingBag, ListOrdered, Tag, 
-            Layers, Archive, CheckSquare, Square, Trash2, Edit, Save, Copy, CreditCard, 
-            RotateCcw, Minus, TrendingUp, Wallet, BoxSelect, Undo2, PackageCheck, FileSpreadsheet
+            LayoutDashboard, 
+            Package, 
+            ShoppingCart, 
+            Users, 
+            Zap, 
+            Plus, 
+            ArrowRight, 
+            AlertCircle, 
+            CheckCircle2, 
+            Combine, 
+            Split, 
+            MessageCircle, 
+            Truck, 
+            DollarSign, 
+            Search, 
+            Filter, 
+            X, 
+            ChevronRight, 
+            ChevronUp,
+            ClipboardList, 
+            User, 
+            ShoppingBag, 
+            ListOrdered, 
+            Tag, 
+            Layers, 
+            Archive, 
+            CheckSquare, 
+            Square, 
+            Trash2, 
+            Edit, 
+            Save,
+            Copy,
+            CreditCard,
+            RotateCcw,
+            Minus,
+            TrendingUp,
+            Wallet,
+            BoxSelect,
+            Undo2,
+            PackageCheck
         } from 'https://esm.sh/lucide-react@0.263.1?dev';
 
         const App = () => {
@@ -60,7 +104,7 @@
             const [selectedGroupName, setSelectedGroupName] = useState(null); 
             const [selectedCustomerDetail, setSelectedCustomerDetail] = useState(null);
             
-            // 到貨管理選中的顧客
+            // 到貨管理選中的顧客 (包含 source: 'pending' | 'shipped')
             const [selectedArrivalCustomer, setSelectedArrivalCustomer] = useState(null); 
             
             // 編輯與收款模式狀態
@@ -68,7 +112,7 @@
             const [showPaymentInput, setShowPaymentInput] = useState(false);
             const [paymentAmount, setPaymentAmount] = useState('');
             
-            // 編輯數量狀態 ID
+            // 編輯數量狀態 ID (格式: orderId-productId)
             const [editingOrderQtyId, setEditingOrderQtyId] = useState(null);
             const [editingAllocatedQtyId, setEditingAllocatedQtyId] = useState(null);
             const [editingPurchaseQtyId, setEditingPurchaseQtyId] = useState(null);
@@ -109,13 +153,14 @@
             };
 
             // ==========================================
-            //  核心運算區
+            //  核心運算區 (順序很重要)
             // ==========================================
 
+            // 1. 商品統計 (Products Stats)
             const productsWithStats = useMemo(() => {
                 return products.map(p => {
-                    let allocated = 0;
-                    let confirmed = 0;
+                    let allocated = 0; // 總喊單
+                    let confirmed = 0; // 已配單 (Allocated/Supply)
 
                     orders.forEach(o => {
                         o.items.forEach(item => {
@@ -134,6 +179,7 @@
                 });
             }, [products, orders]);
 
+            // 2. 顧客清單 (Customer List)
             const customerList = useMemo(() => {
                 const map = {};
                 
@@ -153,10 +199,14 @@
                     map[o.customer].orderCount += 1;
                     
                     o.items.forEach(item => {
-                        map[o.customer].rawItems.push({ ...item, orderId: o.id });
+                        map[o.customer].rawItems.push({
+                            ...item,
+                            orderId: o.id
+                        });
                     });
                 });
 
+                // 計算優惠與總額
                 Object.values(map).forEach(cust => {
                     const nameCounts = {};
                     cust.rawItems.forEach(item => {
@@ -177,6 +227,7 @@
                             originalPrice = productInfo.price;
                             tierMinQty = productInfo.tierMinQty;
                             tierPrice = productInfo.tierPrice;
+                            
                             const pName = productInfo.name;
                             if (tierMinQty > 0 && nameCounts[pName] >= tierMinQty) {
                                 finalPrice = tierPrice;
@@ -201,26 +252,39 @@
                 return Object.values(map);
             }, [orders, products]);
 
+            // 3. 全域統計 (Stats)
             const stats = useMemo(() => {
                 const totalDebt = customerList.reduce((acc, curr) => acc + curr.debt, 0);
                 const totalRevenue = customerList.reduce((acc, curr) => acc + curr.totalSpent, 0); 
+
                 let shortageItemCount = 0; 
                 let totalShortageQty = 0;  
+
                 productsWithStats.forEach(p => {
                     if (p.shortage > 0) {
                         shortageItemCount += 1;
                         totalShortageQty += p.shortage;
                     }
                 });
-                return { totalDebt, totalRevenue, shortageItemCount, totalShortageQty };
+
+                return {
+                    totalDebt,
+                    totalRevenue, 
+                    shortageItemCount,
+                    totalShortageQty,
+                    pendingShipment: orders.filter(o => o.status === '待出貨').length
+                };
             }, [orders, productsWithStats, customerList]); 
 
+            // 4. 到貨管理資料 (Split into Pending and Shipped)
             const { pendingArrivalCustomers, shippedArrivalCustomers } = useMemo(() => {
                 const pendingMap = {};
                 const shippedMap = {};
 
                 orders.forEach(o => {
+                    // 已出貨的訂單進入 shippedMap，其餘進入 pendingMap
                     const targetMap = o.status === '已出貨' ? shippedMap : pendingMap;
+                    
                     if (!targetMap[o.customer]) {
                         targetMap[o.customer] = { name: o.customer, items: [] };
                     }
@@ -237,11 +301,23 @@
                     return Object.values(map).map(cust => {
                         const totalItemsCount = cust.items.length; 
                         const arrivedItemsCount = cust.items.filter(i => (i.allocatedQty || 0) >= i.qty).length; 
+                        
                         const totalQty = cust.items.reduce((sum, i) => sum + i.qty, 0); 
                         const allocatedQty = cust.items.reduce((sum, i) => sum + (i.allocatedQty || 0), 0);
+
                         const isFullyArrived = totalItemsCount > 0 && totalItemsCount === arrivedItemsCount;
-                        return { ...cust, source, totalItemsCount, arrivedItemsCount, totalQty, allocatedQty, isFullyArrived };
+                        
+                        return {
+                            ...cust,
+                            source, // 標記來源
+                            totalItemsCount,
+                            arrivedItemsCount,
+                            totalQty,
+                            allocatedQty,
+                            isFullyArrived
+                        };
                     }).sort((a, b) => {
+                        // 全到貨的排前面
                         if (a.isFullyArrived && !b.isFullyArrived) return -1;
                         if (!a.isFullyArrived && b.isFullyArrived) return 1;
                         return 0;
@@ -252,10 +328,14 @@
                     pendingArrivalCustomers: processMap(pendingMap, 'pending'),
                     shippedArrivalCustomers: processMap(shippedMap, 'shipped')
                 };
-            }, [orders, products]);
+            }, [orders, products]); // 依賴 orders 和 products (取得名稱變體)
 
+            // 5. 搜尋與過濾
             const purchaseList = useMemo(() => productsWithStats.filter(p => p.shortage > 0).map(p => ({ ...p })), [productsWithStats]);
-            const revenueCustomers = useMemo(() => customerList.filter(c => c.totalSpent > 0).sort((a, b) => b.totalSpent - a.totalSpent), [customerList]);
+            
+            const revenueCustomers = useMemo(() => {
+                return customerList.filter(c => c.totalSpent > 0).sort((a, b) => b.totalSpent - a.totalSpent);
+            }, [customerList]);
 
             const groupedProducts = useMemo(() => {
                 const groups = {};
@@ -273,9 +353,15 @@
 
             const filteredGroupedProducts = groupedProducts.filter(g => g.name.includes(searchQuery));
             const filteredCustomers = customerList.filter(c => c.name.includes(searchQuery));
+            
+            // 搜尋過濾到貨管理
             const filteredPendingArrivals = pendingArrivalCustomers.filter(c => c.name.includes(searchQuery));
             const filteredShippedArrivals = shippedArrivalCustomers.filter(c => c.name.includes(searchQuery));
             
+            const filteredOrders = orders.filter(o => o.customer.includes(searchQuery) || o.id.includes(searchQuery));
+            const unsettledOrders = filteredOrders.filter(o => o.status !== '待出貨' && o.status !== '已出貨');
+            const settledOrders = filteredOrders.filter(o => o.status === '待出貨');
+
             const availableVariants = useMemo(() => {
                 if (!proxyForm.productName) return [];
                 return [...new Set(products.filter(p => p.name === proxyForm.productName).map(p => p.variant))];
@@ -308,22 +394,34 @@
                 notify("報表已匯出");
             };
 
+            // 確認出貨功能
             const handleShipCustomer = (customerName) => {
                 if(!window.confirm(`確認將 ${customerName} 的所有商品標記為「已出貨」嗎？`)) return;
+
                 setOrders(prev => prev.map(o => {
-                    if (o.customer === customerName && o.status !== '已出貨') return { ...o, status: '已出貨' };
+                    // 只更新該顧客且尚未出貨的訂單
+                    if (o.customer === customerName && o.status !== '已出貨') {
+                        return { ...o, status: '已出貨' };
+                    }
                     return o;
                 }));
+                
+                // 關閉視窗，讓使用者看到列表變動
                 setSelectedArrivalCustomer(null);
                 notify(`${customerName} 的訂單已移至出貨紀錄`);
             };
 
+            // 取消出貨 (回復) 功能
             const handleUnshipCustomer = (customerName) => {
                 if(!window.confirm(`確定要取消 ${customerName} 的出貨狀態，並回復為「待出貨」嗎？`)) return;
+
                 setOrders(prev => prev.map(o => {
-                    if (o.customer === customerName && o.status === '已出貨') return { ...o, status: '待出貨' };
+                    if (o.customer === customerName && o.status === '已出貨') {
+                        return { ...o, status: '待出貨' }; // 回復到待出貨狀態 (或之前的狀態，這裡簡化為待出貨)
+                    }
                     return o;
                 }));
+                
                 setSelectedArrivalCustomer(null);
                 notify(`${customerName} 已回復為待出貨`);
             };
@@ -486,15 +584,22 @@
 
             const handleCustomerPayment = () => {
                 const amount = parseInt(paymentAmount, 10);
-                if (isNaN(amount) || amount === 0) { notify("請輸入有效的收款金額"); return; }
+                if (isNaN(amount) || amount === 0) {
+                    notify("請輸入有效的收款金額");
+                    return;
+                }
+
                 if (!selectedCustomerDetail) return;
 
                 const customerName = selectedCustomerDetail.name;
+                
                 setOrders(prevOrders => {
                     let remaining = Math.abs(amount);
                     const isRefund = amount < 0;
+                    
                     return prevOrders.map(order => {
                         if (order.customer !== customerName || remaining <= 0) return order;
+
                         if (!isRefund && order.debt > 0) {
                             const payAmount = Math.min(order.debt, remaining);
                             remaining -= payAmount;
@@ -507,6 +612,7 @@
                         return order;
                     });
                 });
+
                 setPaymentAmount('');
                 setShowPaymentInput(false);
                 notify(amount > 0 ? `已收款 $${amount}` : `已退款 $${Math.abs(amount)}`);
@@ -532,16 +638,45 @@
                 notify("結單成功");
             };
 
+            const getGroupAllocations = (groupName) => {
+                const variants = products.filter(p => p.name === groupName);
+                const result = [];
+                variants.forEach(variant => {
+                    orders.forEach(o => {
+                        o.items.forEach(item => {
+                            if (item.productId === variant.id) {
+                                result.push({
+                                    orderId: o.id,
+                                    productId: variant.id,
+                                    customer: o.customer,
+                                    qty: item.qty,
+                                    variant: variant.variant,
+                                    allocatedQty: item.allocatedQty || 0,
+                                    isAllocated: (item.allocatedQty || 0) >= item.qty
+                                });
+                            }
+                        });
+                    });
+                });
+                return result;
+            };
+
+            // 確保選中物件更新 (使用 useMemo 中的 arrivalCustomers 來查找，確保 source 正確)
             const currentSelectedCustomer = selectedCustomerDetail 
                 ? customerList.find(c => c.name === selectedCustomerDetail.name) || selectedCustomerDetail
                 : null;
             
+            // 修正：在渲染時動態查找對應清單中的顧客物件
+            // 這解決了「點擊沒反應」或「資料不更新」的問題
             const currentSelectedArrivalCustomer = selectedArrivalCustomer
-                ? (pendingArrivalCustomers.find(c => c.name === selectedArrivalCustomer.name) || shippedArrivalCustomers.find(c => c.name === selectedArrivalCustomer.name) || selectedArrivalCustomer)
-                : null;
-            
-            const currentSelectedGroup = selectedGroupName 
-                ? groupedProducts.find(g => g.name === selectedGroupName) 
+                ? (
+                    // 先看能不能在待出貨找到
+                    pendingArrivalCustomers.find(c => c.name === selectedArrivalCustomer.name) ||
+                    // 再看能不能在已出貨找到
+                    shippedArrivalCustomers.find(c => c.name === selectedArrivalCustomer.name) ||
+                    // 若都找不到 (可能剛好狀態切換)，回傳原本的，避免崩潰
+                    selectedArrivalCustomer
+                  )
                 : null;
 
             return (
@@ -696,11 +831,6 @@
                         {/* View 3: 顧客列表 */}
                         {activeTab === 'customers' && (
                             <div className="space-y-3 pb-20">
-                                <div className="flex justify-end mb-2">
-                                    <button onClick={handleExportToCSV} className="bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm active:scale-95 transition-all">
-                                        <FileSpreadsheet size={14}/> 匯出報表
-                                    </button>
-                                </div>
                                 {filteredCustomers.map((cust, idx) => (
                                     <div key={idx} onClick={() => setSelectedCustomerDetail(cust)} className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 flex justify-between items-center cursor-pointer active:scale-98">
                                         <div className="flex items-center gap-3">
@@ -714,7 +844,6 @@
                                             <div className="text-right">
                                                 <p className="text-lg font-black text-indigo-600">${cust.totalSpent.toLocaleString()}</p>
                                             </div>
-                                            {/* 顧客刪除按鈕 */}
                                             <button 
                                                 onClick={(e) => handleDeleteCustomer(cust.name, e)}
                                                 className="text-slate-300 hover:text-rose-500 p-3 -mr-2"
@@ -727,9 +856,11 @@
                             </div>
                         )}
 
-                        {/* View 4: 到貨管理 */}
+                        {/* View 4: 到貨管理 (分流為 待出貨 / 已出貨) */}
                         {activeTab === 'arrivals' && (
                             <div className="space-y-6 pb-24">
+                                
+                                {/* 區塊一：待出貨 / 到貨中 */}
                                 <div>
                                     <div className="flex items-center gap-2 mb-3 px-2">
                                         <Package size={20} className="text-indigo-600" />
@@ -743,16 +874,22 @@
                                         ) : (
                                             filteredPendingArrivals.map((cust, idx) => {
                                                 const progress = cust.totalQty > 0 ? (cust.allocatedQty / cust.totalQty) * 100 : 0;
+                                                
                                                 return (
                                                     <div key={idx} onClick={() => setSelectedArrivalCustomer(cust)} className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden cursor-pointer active:scale-98 relative">
+                                                        {/* 確認出貨按鈕 (僅全到貨時顯示) */}
                                                         {cust.isFullyArrived && (
                                                             <button 
-                                                                onClick={(e) => { e.stopPropagation(); handleShipCustomer(cust.name); }}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleShipCustomer(cust.name);
+                                                                }}
                                                                 className="absolute right-3 bottom-3 bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-lg shadow-emerald-200 z-10 flex items-center gap-1 active:scale-95 transition-all animate-bounce"
                                                             >
                                                                 <Truck size={14} /> 確認出貨
                                                             </button>
                                                         )}
+
                                                         <div className="p-4 flex justify-between items-center">
                                                             <div className="flex items-center gap-3">
                                                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${cust.isFullyArrived ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
@@ -785,6 +922,8 @@
                                     )}
                                     </div>
                                 </div>
+
+                                {/* 區塊二：已出貨紀錄 */}
                                 <div>
                                     <div className="flex items-center gap-2 mb-3 px-2 mt-6 opacity-60">
                                         <PackageCheck size={20} className="text-slate-500" />
@@ -811,6 +950,7 @@
                                         )}
                                     </div>
                                 </div>
+
                             </div>
                         )}
                     </main>
@@ -832,298 +972,8 @@
                         </button>
                     </div>
 
-                    {/* Modal: 代客加單 */}
-                    {showProxyOrder && (
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[200] p-0 md:p-4 animate-in">
-                            <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[80vh] flex flex-col">
-                                <div className="p-6 border-b flex justify-between items-center">
-                                    <h3 className="text-xl font-black text-slate-800">代客加單 / 補貨</h3>
-                                    <button onClick={() => setShowProxyOrder(false)} className="bg-slate-100 p-2 rounded-full hover:bg-slate-200"><X size={18}/></button>
-                                </div>
-                                <div className="p-6 space-y-4 overflow-y-auto flex-1 no-scrollbar">
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-400 mb-1 block">商品名稱</label>
-                                        <input list="products-list" placeholder="輸入或選擇商品" className="w-full bg-slate-50 p-3 rounded-xl font-bold" value={proxyForm.productName} onChange={handleProxyProductChange}/>
-                                        <datalist id="products-list">{products.map(p => <option key={p.id} value={p.name} />)}</datalist>
-                                    </div>
-                                    <div className="flex gap-4">
-                                        <div className="flex-1">
-                                            <label className="text-xs font-bold text-slate-400 mb-1 block">款式</label>
-                                            <input list="variants-list" placeholder="單一款式" className="w-full bg-slate-50 p-3 rounded-xl font-bold" value={proxyForm.variant} onChange={e => setProxyForm({...proxyForm, variant: e.target.value})}/>
-                                            <datalist id="variants-list">{availableVariants.map((v, i) => <option key={i} value={v} />)}</datalist>
-                                        </div>
-                                        <div className="w-1/3">
-                                            <label className="text-xs font-bold text-slate-400 mb-1 block">單價</label>
-                                            <input type="number" className="w-full bg-slate-50 p-3 rounded-xl font-bold" value={proxyForm.price} onChange={e => setProxyForm({...proxyForm, price: e.target.value})}/>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-400 mb-1 block">顧客 (留空則純補貨)</label>
-                                        <input list="customers-list" placeholder="搜尋顧客..." className="w-full bg-slate-50 p-3 rounded-xl font-bold" value={proxyForm.customer} onChange={e => setProxyForm({...proxyForm, customer: e.target.value})}/>
-                                        <datalist id="customers-list">{customerList.map((c, i) => <option key={i} value={c.name} />)}</datalist>
-                                    </div>
-                                    <div className="flex gap-4">
-                                        <div className="flex-1">
-                                            <label className="text-xs font-bold text-slate-400 mb-1 block">訂購數量</label>
-                                            <input type="number" className="w-full bg-slate-50 p-3 rounded-xl font-bold" value={proxyForm.qty} onChange={e => setProxyForm({...proxyForm, qty: e.target.value})}/>
-                                        </div>
-                                        <div className="flex-1">
-                                            <label className="text-xs font-bold text-slate-400 mb-1 block">同時入庫現貨</label>
-                                            <input type="number" className="w-full bg-slate-50 p-3 rounded-xl font-bold" value={proxyForm.purchasedQty} onChange={e => setProxyForm({...proxyForm, purchasedQty: e.target.value})}/>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="p-4 border-t">
-                                    <button onClick={handleAddOrder} className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-bold shadow-lg shadow-indigo-200 active:scale-95 transition-all">確認新增</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Modal: 營收清單 */}
-                    {showRevenueList && (
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[200] p-0 md:p-4 animate-in">
-                            <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[70vh] flex flex-col">
-                                <div className="p-6 bg-amber-500 text-white rounded-t-[30px] flex justify-between items-center">
-                                    <h3 className="text-xl font-black">💰 營收排行榜</h3>
-                                    <button onClick={() => setShowRevenueList(false)} className="bg-white/20 p-2 rounded-full"><X size={18}/></button>
-                                </div>
-                                <div className="p-4 overflow-y-auto flex-1 no-scrollbar space-y-2">
-                                    {revenueCustomers.map((c, idx) => (
-                                        <div key={idx} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center font-bold text-xs">{idx + 1}</div>
-                                                <span className="font-bold text-slate-700">{c.name}</span>
-                                            </div>
-                                            <span className="font-black text-slate-800">${c.totalSpent.toLocaleString()}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                    
-                    {/* Modal: 補貨清單 */}
-                    {showPurchaseList && (
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[200] p-0 md:p-4 animate-in">
-                            <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[70vh] flex flex-col">
-                                <div className="p-6 bg-rose-500 text-white rounded-t-[30px] flex justify-between items-center">
-                                    <h3 className="text-xl font-black">🛒 採購清單</h3>
-                                    <button onClick={() => setShowPurchaseList(false)} className="bg-white/20 p-2 rounded-full"><X size={18}/></button>
-                                </div>
-                                <div className="p-4 overflow-y-auto flex-1 no-scrollbar space-y-2">
-                                    {purchaseList.length === 0 ? <p className="text-center text-slate-400 mt-10">目前庫存充足，無需補貨</p> : 
-                                    purchaseList.map(p => (
-                                        <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                            <div className="flex justify-between mb-2">
-                                                <span className="font-bold text-slate-700">{p.name} - {p.variant}</span>
-                                                <span className="text-rose-500 font-black">缺 {p.shortage}</span>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <button className="bg-slate-200 px-2 rounded" onClick={() => handleUpdatePurchaseQty(p.id, p.shortage)}>補貨</button>
-                                                {editingPurchaseQtyId === p.id ? (
-                                                    <input 
-                                                        autoFocus type="number" className="w-20 bg-white border rounded px-1" 
-                                                        defaultValue={p.shortage} 
-                                                        onBlur={(e) => handleUpdatePurchaseQty(p.id, e.target.value)}
-                                                    />
-                                                ) : (
-                                                    <span onClick={() => setEditingPurchaseQtyId(p.id)} className="text-xs text-slate-400 underline cursor-pointer">修正缺貨數</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Modal: 商品詳情 */}
-                    {selectedGroupName && currentSelectedGroup && (
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[200] p-0 md:p-4 animate-in">
-                            <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[80vh] flex flex-col">
-                                <div className="p-6 border-b flex justify-between items-center">
-                                    <div>
-                                        <h3 className="text-xl font-black text-slate-800">{currentSelectedGroup.name}</h3>
-                                        <p className="text-xs text-slate-400 font-bold mt-1">
-                                            {isEditingProduct ? "編輯模式" : "商品詳情"}
-                                        </p>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <button onClick={() => setIsEditingProduct(!isEditingProduct)} className={`p-2 rounded-full transition-all ${isEditingProduct ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
-                                            <Edit size={18} />
-                                        </button>
-                                        <button onClick={() => setSelectedGroupName(null)} className="bg-slate-100 p-2 rounded-full"><X size={18}/></button>
-                                    </div>
-                                </div>
-                                <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
-                                    <div className="bg-slate-50 p-4 rounded-2xl flex justify-between items-center">
-                                        <span className="text-slate-500 text-sm font-bold">預設單價</span>
-                                        <span className="font-black text-xl text-slate-800">${currentSelectedGroup.price}</span>
-                                    </div>
-
-                                    {/* 階梯價設定 (所有款式共用，這裡簡化處理，編輯其中一個款式即可) */}
-                                    {isEditingProduct && currentSelectedGroup.variants.length > 0 && (
-                                        <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 space-y-3">
-                                            <p className="text-xs font-bold text-indigo-400">階梯優惠設定 (滿件折價)</p>
-                                            <div className="flex gap-4">
-                                                <div className="flex-1">
-                                                    <label className="text-xs text-indigo-400 mb-1 block">滿幾件</label>
-                                                    <input 
-                                                        type="number" 
-                                                        className="w-full bg-white p-2 rounded-lg text-center font-bold text-indigo-600"
-                                                        value={currentSelectedGroup.variants[0].tierMinQty}
-                                                        onChange={(e) => handleUpdateProductInfo(currentSelectedGroup.variants[0].id, 'tierMinQty', e.target.value)}
-                                                    />
-                                                </div>
-                                                <div className="flex-1">
-                                                    <label className="text-xs text-indigo-400 mb-1 block">優惠單價</label>
-                                                    <input 
-                                                        type="number" 
-                                                        className="w-full bg-white p-2 rounded-lg text-center font-bold text-indigo-600"
-                                                        value={currentSelectedGroup.variants[0].tierPrice}
-                                                        onChange={(e) => handleUpdateProductInfo(currentSelectedGroup.variants[0].id, 'tierPrice', e.target.value)}
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <h4 className="font-bold text-slate-800 mt-4 px-1">款式列表</h4>
-                                    <div className="space-y-2">
-                                        {currentSelectedGroup.variants.map((v) => (
-                                            <div key={v.id} className="bg-white border border-slate-100 rounded-2xl p-3 flex justify-between items-center shadow-sm">
-                                                <div>
-                                                    <p className="font-bold text-slate-700">{v.variant}</p>
-                                                    <div className="flex gap-3 text-xs mt-1">
-                                                        <span className="text-slate-400">現貨 <b className={v.spot < 0 ? 'text-rose-500' : 'text-slate-600'}>{v.spot}</b></span>
-                                                        <span className="text-slate-400">已喊 <b className="text-slate-600">{v.allocated}</b></span>
-                                                    </div>
-                                                </div>
-                                                {isEditingProduct && (
-                                                    <button onClick={() => handleDeleteProduct(v.id)} className="text-rose-400 bg-rose-50 p-2 rounded-lg hover:bg-rose-100">
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Modal: 顧客詳情 */}
-                    {selectedCustomerDetail && currentSelectedCustomer && (
-                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[200] p-0 md:p-4 animate-in">
-                            <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[90vh] flex flex-col">
-                                <div className="p-6 bg-slate-800 text-white rounded-t-[30px] shrink-0">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <h3 className="text-2xl font-black">{currentSelectedCustomer.name}</h3>
-                                            <p className="text-slate-400 text-xs font-bold mt-1">
-                                                {currentSelectedCustomer.orderCount} 筆訂單 · 總消費 ${currentSelectedCustomer.totalSpent.toLocaleString()}
-                                            </p>
-                                        </div>
-                                        <button onClick={() => setSelectedCustomerDetail(null)} className="bg-white/10 p-2 rounded-full text-white"><X size={18}/></button>
-                                    </div>
-                                    <div className="mt-4 flex gap-2">
-                                        <div className="flex-1 bg-white/10 rounded-xl p-3">
-                                            <div className="text-xs text-slate-300">待付款 (欠款)</div>
-                                            <div className="text-xl font-bold text-rose-400">${currentSelectedCustomer.debt.toLocaleString()}</div>
-                                        </div>
-                                        <div className="flex-1 bg-white/10 rounded-xl p-3">
-                                            <div className="text-xs text-slate-300">已付款</div>
-                                            <div className="text-xl font-bold text-emerald-400">${currentSelectedCustomer.totalPaid.toLocaleString()}</div>
-                                        </div>
-                                    </div>
-                                    <div className="mt-4 flex gap-2">
-                                        <button onClick={() => handleCopyCustomerDetails(currentSelectedCustomer)} className="flex-1 bg-indigo-500 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all">
-                                            <Copy size={14} /> 複製結單明細
-                                        </button>
-                                        <button onClick={() => setShowPaymentInput(!showPaymentInput)} className="flex-1 bg-emerald-500 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all">
-                                            <DollarSign size={14} /> 收款 / 退款
-                                        </button>
-                                    </div>
-                                    
-                                    {showPaymentInput && (
-                                        <div className="mt-3 bg-white p-2 rounded-xl flex gap-2 animate-in">
-                                            <input 
-                                                type="number" 
-                                                placeholder="輸入金額 (負數為退款)" 
-                                                className="flex-1 bg-slate-100 rounded-lg px-3 text-slate-900 font-bold outline-none"
-                                                value={paymentAmount}
-                                                onChange={(e) => setPaymentAmount(e.target.value)}
-                                            />
-                                            <button onClick={handleCustomerPayment} className="bg-slate-800 text-white px-4 py-2 rounded-lg font-bold text-xs">確認</button>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar pb-20">
-                                    {currentSelectedCustomer.items.map((item, idx) => (
-                                        <div key={idx} className="flex justify-between items-center p-3 border border-slate-100 rounded-2xl shadow-sm bg-white relative overflow-hidden">
-                                            <div className="flex items-center gap-3">
-                                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm ${item.isAllocated ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
-                                                    {item.qty}
-                                                </div>
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="font-bold text-slate-700">{item.name}</span>
-                                                        {item.isDiscounted && <span className="bg-rose-100 text-rose-500 text-[10px] px-1.5 py-0.5 rounded font-bold">優惠</span>}
-                                                    </div>
-                                                    <p className="text-xs text-slate-400">{item.variant}</p>
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="font-bold text-slate-800">${item.itemTotal}</p>
-                                                <div className="flex gap-2 justify-end mt-1">
-                                                    <span 
-                                                        className="text-xs text-indigo-500 underline cursor-pointer"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setEditingOrderQtyId(`${item.orderId}-${item.productId}`);
-                                                        }}
-                                                    >
-                                                        修改
-                                                    </span>
-                                                    <span 
-                                                        className="text-xs text-rose-400 underline cursor-pointer"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDeleteOrderItem(item.orderId, item.productId);
-                                                        }}
-                                                    >
-                                                        刪除
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            
-                                            {/* 內嵌修改數量 (簡單版) */}
-                                            {editingOrderQtyId === `${item.orderId}-${item.productId}` && (
-                                                <div className="absolute inset-0 bg-white/95 flex items-center justify-center gap-2 z-10">
-                                                    <span className="text-xs font-bold text-slate-500">修改數量:</span>
-                                                    <input 
-                                                        autoFocus
-                                                        type="number" 
-                                                        className="w-16 border-b-2 border-indigo-500 text-center font-bold text-lg outline-none"
-                                                        defaultValue={item.qty}
-                                                        onBlur={(e) => handleUpdateOrderQty(item.orderId, item.productId, e.target.value)}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter') handleUpdateOrderQty(item.orderId, item.productId, e.target.value);
-                                                        }}
-                                                    />
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                     {/* Modal: 到貨檢核 (Arrival Check) */}
-                     {selectedArrivalCustomer && currentSelectedArrivalCustomer && (
+                    {/* Modal: 到貨檢核 (Arrival Check) */}
+                    {selectedArrivalCustomer && currentSelectedArrivalCustomer && (
                          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[150] p-0 md:p-4 animate-in">
                             <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[85vh] flex flex-col">
                                 <div className="p-6 bg-slate-800 text-white shrink-0 relative rounded-t-[30px]">
@@ -1137,6 +987,7 @@
                                         <button onClick={() => setSelectedArrivalCustomer(null)} className="bg-white/10 p-2 rounded-full text-white"><X size={18}/></button>
                                     </div>
                                     
+                                    {/* 狀態列與操作 */}
                                     <div className="mt-4 flex gap-2">
                                         <div className="flex-1 bg-white/10 rounded-xl p-3 flex justify-between items-center">
                                             <div className="text-xs text-slate-300">配貨進度</div>
@@ -1144,6 +995,7 @@
                                                 {currentSelectedArrivalCustomer.arrivedItemsCount} / {currentSelectedArrivalCustomer.totalItemsCount}
                                             </div>
                                         </div>
+                                        {/* 取消出貨/回復按鈕 */}
                                         {currentSelectedArrivalCustomer.source === 'shipped' && (
                                             <button 
                                                 onClick={() => handleUnshipCustomer(currentSelectedArrivalCustomer.name)}
@@ -1158,6 +1010,7 @@
                                 <div className="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar pb-20">
                                     {currentSelectedArrivalCustomer.items.map((item, idx) => {
                                         const isFullyArrivedItem = (item.allocatedQty || 0) >= item.qty;
+                                        // 檢查是否已出貨狀態 (禁止編輯)
                                         const isShipped = currentSelectedArrivalCustomer.source === 'shipped';
 
                                         return (
@@ -1166,6 +1019,7 @@
                                                 className={`flex justify-between items-center p-3 border rounded-2xl shadow-sm transition-all ${isShipped ? 'bg-gray-100 border-gray-200 opacity-70' : isFullyArrivedItem ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-100'}`}
                                             >
                                                 <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                    {/* 全到貨一鍵按鈕 (已出貨則隱藏或不可點) */}
                                                     {!isShipped && (
                                                         <div 
                                                             className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all shrink-0 cursor-pointer ${isFullyArrivedItem ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-slate-300 text-transparent'}`}
@@ -1191,6 +1045,7 @@
                                                     </div>
                                                 </div>
 
+                                                {/* 到貨數量編輯區塊 (已出貨不可編輯) */}
                                                 {!isShipped && (
                                                     <div className="flex items-center gap-2 pl-2">
                                                         <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm">
@@ -1236,6 +1091,463 @@
                         </div>
                     )}
 
+                    {/* Modal: 代客加單 */}
+                    {showProxyOrder && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[200] p-0 md:p-4 animate-in">
+                            <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl flex flex-col max-h-[90vh] md:max-h-[80vh]">
+                                <div className="p-5 border-b border-slate-100 flex justify-between items-center shrink-0">
+                                    <div>
+                                        <h3 className="font-black text-xl text-slate-800">代客加單 / 快速入庫</h3>
+                                        <p className="text-xs text-slate-400 font-bold">若不填顧客，則視為純入庫</p>
+                                    </div>
+                                    <button onClick={() => setShowProxyOrder(false)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:text-slate-700 active:scale-95"><X size={20} /></button>
+                                </div>
+                                <div className="p-5 space-y-4 overflow-y-auto no-scrollbar">
+                                    <datalist id="productSuggestions">
+                                        {[...new Set(products.map(p => p.name))].map(name => <option key={name} value={name} />)}
+                                    </datalist>
+                                    <datalist id="customerSuggestions">
+                                        {customerList.map(c => <option key={c.name} value={c.name} />)}
+                                    </datalist>
+                                    <datalist id="variantSuggestions">
+                                        {availableVariants.map(v => <option key={v} value={v} />)}
+                                    </datalist>
+
+                                    <div className="space-y-1">
+                                         <label className="text-xs font-bold text-slate-500 ml-1">商品名稱</label>
+                                         <input type="text" list="productSuggestions" placeholder="輸入商品名稱..." className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 pl-4 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300" value={proxyForm.productName} onChange={handleProxyProductChange} />
+                                    </div>
+                                    <div className="space-y-1">
+                                         <label className="text-xs font-bold text-slate-500 ml-1">款式 / 規格</label>
+                                         <input type="text" list="variantSuggestions" placeholder="例如：紅色、L號..." className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 pl-4 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300" value={proxyForm.variant} onChange={(e) => setProxyForm(prev => ({ ...prev, variant: e.target.value }))} />
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <div className="space-y-1 flex-1">
+                                            <label className="text-xs font-bold text-slate-500 ml-1">單價</label>
+                                            <input type="number" placeholder="0" className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 pl-4 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300" value={proxyForm.price} onChange={(e) => setProxyForm(prev => ({ ...prev, price: e.target.value }))} />
+                                        </div>
+                                        {proxyForm.customer && (
+                                            <div className="space-y-1 w-24 animate-in">
+                                                <label className="text-xs font-bold text-slate-500 ml-1">喊單量</label>
+                                                <input type="number" placeholder="1" className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-center text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300" value={proxyForm.qty} onChange={(e) => setProxyForm(prev => ({ ...prev, qty: e.target.value }))} />
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="space-y-1">
+                                         <label className="text-xs font-bold text-indigo-500 ml-1">購買數量 (填寫即入庫)</label>
+                                         <input type="number" placeholder="0" className="w-full bg-indigo-50 border border-indigo-100 rounded-2xl p-4 pl-4 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300" value={proxyForm.purchasedQty} onChange={(e) => setProxyForm(prev => ({ ...prev, purchasedQty: e.target.value }))} />
+                                    </div>
+                                    <div className="space-y-1">
+                                         <label className="text-xs font-bold text-slate-500 ml-1">顧客暱稱 (留空為純入庫)</label>
+                                         <input type="text" list="customerSuggestions" placeholder="輸入姓名..." className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 pl-4 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300" value={proxyForm.customer} onChange={(e) => setProxyForm(prev => ({ ...prev, customer: e.target.value }))} />
+                                    </div>
+                                    <div className="h-4"></div>
+                                </div>
+                                <div className="p-4 border-t border-slate-100 bg-white shrink-0 pb-8 md:pb-4">
+                                     <button onClick={handleAddOrder} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 shadow-lg shadow-indigo-200 active:scale-95 transition-all">
+                                        <Plus size={20} /> {proxyForm.customer ? '確認加單 (待排)' : '確認入庫'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Modal: 營收清單 */}
+                    {showRevenueList && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[150] p-0 md:p-4 animate-in">
+                            <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[85vh] flex flex-col">
+                                <div className="bg-amber-500 text-white p-6 relative overflow-hidden rounded-t-[30px] shrink-0">
+                                    <h3 className="text-2xl font-black relative z-10">顧客消費總覽</h3>
+                                    <p className="text-amber-100 text-xs font-bold relative z-10">依消費總額排序</p>
+                                    <button onClick={() => setShowRevenueList(false)} className="absolute top-4 right-4 bg-white/10 p-2 rounded-full hover:bg-white/20"><X size={20}/></button>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar pb-20">
+                                    {revenueCustomers.length === 0 ? (
+                                        <div className="text-center p-8 text-slate-400 text-sm">暫無顧客消費資料</div>
+                                    ) : (
+                                        revenueCustomers.map((c, idx) => (
+                                            <div key={idx} onClick={() => { setShowRevenueList(false); setSelectedCustomerDetail(c); }} className="bg-white rounded-2xl p-4 border border-slate-100 flex justify-between items-center shadow-sm cursor-pointer active:scale-98">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center font-bold text-sm">{c.name.charAt(0)}</div>
+                                                    <div>
+                                                        <span className="font-bold text-slate-800 block">{c.name}</span>
+                                                        {c.debt > 0 ? (
+                                                            <span className="text-[10px] text-rose-500 font-bold">欠款: ${c.debt.toLocaleString()}</span>
+                                                        ) : (
+                                                            <span className="text-[10px] text-emerald-500 font-bold">已結清</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <span className="font-black text-slate-700 text-lg">${c.totalSpent.toLocaleString()}</span>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Modal: 商品詳情 ... */}
+                    {selectedGroupName && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[150] p-0 md:p-4 animate-in">
+                            <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[85vh] flex flex-col">
+                                <div className="p-6 bg-slate-800 text-white shrink-0 relative rounded-t-[30px] flex justify-between items-start">
+                                    <div>
+                                        <h3 className="text-xl font-black">{selectedGroupName}</h3>
+                                        <p className="text-slate-400 text-xs font-bold mt-1">手動配單模式</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => {
+                                            setProxyForm(prev => ({ ...prev, productName: selectedGroupName }));
+                                            setShowProxyOrder(true);
+                                        }} className="bg-white/20 p-2 rounded-full hover:bg-white/30 text-white" title="新增此商品訂單">
+                                            <Plus size={18} />
+                                        </button>
+                                        <button onClick={() => setIsEditingProduct(!isEditingProduct)} className={`p-2 rounded-full ${isEditingProduct ? 'bg-indigo-500 text-white' : 'bg-white/10 text-slate-300'}`}>
+                                            <Edit size={18} />
+                                        </button>
+                                        <button onClick={() => setSelectedGroupName(null)} className="bg-white/10 p-2 rounded-full text-white"><X size={18}/></button>
+                                    </div>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar pb-20">
+                                    
+                                    {/* 1. 款式庫存表 (含多件優惠設定) */}
+                                    <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">款式庫存狀態</h4>
+                                            {isEditingProduct && <span className="text-[10px] text-indigo-600 font-bold">點擊數量修改</span>}
+                                        </div>
+                                        <table className="w-full text-xs font-bold">
+                                            <thead>
+                                                <tr className="text-slate-400 border-b border-slate-200">
+                                                    <th className="text-left pb-2">款式</th>
+                                                    <th className="text-center pb-2 text-indigo-500">已配</th>
+                                                    <th className="text-center pb-2 text-rose-500">待配</th>
+                                                    <th className="text-right pb-2 text-slate-800">現貨</th>
+                                                    {isEditingProduct && <th className="w-8"></th>}
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {productsWithStats.filter(p=>p.name===selectedGroupName).map(p => (
+                                                    <React.Fragment key={p.id}>
+                                                        <tr>
+                                                            <td className="py-3 text-slate-700">{p.variant}</td>
+                                                            <td className="py-3 text-center text-indigo-600">{p.confirmed}</td>
+                                                            <td className="py-3 text-center text-rose-500">{p.pending}</td>
+                                                            <td className="py-3 text-right">
+                                                                {isEditingProduct ? (
+                                                                    <input 
+                                                                        type="number" 
+                                                                        className="w-12 bg-white border border-indigo-200 rounded text-center p-1 text-slate-900"
+                                                                        defaultValue={p.spot}
+                                                                        onBlur={(e) => handleUpdateProductInfo(p.id, 'spot', e.target.value)}
+                                                                    />
+                                                                ) : (
+                                                                    <span className="text-slate-900">{p.spot}</span>
+                                                                )}
+                                                            </td>
+                                                            {isEditingProduct && (
+                                                                <td className="text-right">
+                                                                    <button onClick={() => handleDeleteProduct(p.id)} className="text-rose-400 p-1"><Trash2 size={14}/></button>
+                                                                </td>
+                                                            )}
+                                                        </tr>
+                                                        {/* 多件優惠設定區塊 (自動同步) */}
+                                                        {isEditingProduct && (
+                                                            <tr className="bg-indigo-50/50">
+                                                                <td colSpan="5" className="p-2">
+                                                                    <div className="flex items-center gap-2 text-[10px]">
+                                                                        <span className="font-bold text-indigo-600">多件優惠:</span>
+                                                                        <span>滿</span>
+                                                                        <input 
+                                                                            type="number" placeholder="件數" className="w-10 p-1 rounded border border-indigo-200 text-center"
+                                                                            defaultValue={p.tierMinQty}
+                                                                            onBlur={(e) => handleUpdateProductInfo(p.id, 'tierMinQty', e.target.value)}
+                                                                        />
+                                                                        <span>件，單價變</span>
+                                                                        <input 
+                                                                            type="number" placeholder="金額" className="w-14 p-1 rounded border border-indigo-200 text-center"
+                                                                            defaultValue={p.tierPrice}
+                                                                            onBlur={(e) => handleUpdateProductInfo(p.id, 'tierPrice', e.target.value)}
+                                                                        />
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                    </React.Fragment>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    {/* 2. 購買人配單開關 (維持原樣) */}
+                                    <div>
+                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">喊單明細 (配貨管理)</h4>
+                                        <div className="space-y-2">
+                                            {getGroupAllocations(selectedGroupName).length === 0 ? (
+                                                <p className="text-center text-slate-400 text-sm py-4">無資料</p>
+                                            ) : (
+                                                getGroupAllocations(selectedGroupName).map((record, idx) => (
+                                                    <div key={idx} className={`flex justify-between items-center p-3 border rounded-2xl shadow-sm transition-all ${record.isAllocated ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-100'}`}>
+                                                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                            <button 
+                                                                onClick={() => toggleAllocation(record.orderId, record.productId, record.allocatedQty, record.qty)}
+                                                                className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all shrink-0 ${record.isAllocated ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-transparent'}`}
+                                                            >
+                                                                <CheckSquare size={14} />
+                                                            </button>
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-2 flex-wrap">
+                                                                    <span className="font-bold text-slate-700">{record.customer}</span>
+                                                                    <span className="text-[10px] bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded whitespace-nowrap">{record.variant}</span>
+                                                                </div>
+                                                                <span className={`text-[10px] font-bold ${record.isAllocated ? 'text-indigo-600' : 'text-slate-400'}`}>
+                                                                    {record.isAllocated ? '已配到貨' : '待排單'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* 配貨量 / 喊單量 編輯 */}
+                                                        <div className="flex items-center gap-1 pl-2">
+                                                            <div className="flex items-center bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm">
+                                                                <span className="text-xs text-slate-400 mr-1">配:</span>
+                                                                {editingAllocatedQtyId === `${record.orderId}-${record.productId}-detail` ? (
+                                                                    <input 
+                                                                        autoFocus
+                                                                        type="number"
+                                                                        className="w-8 text-center font-bold text-sm p-0 outline-none border-b border-indigo-500 text-indigo-600"
+                                                                        defaultValue={record.allocatedQty || 0}
+                                                                        onBlur={(e) => handleUpdateAllocatedQty(record.orderId, record.productId, e.target.value)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') handleUpdateAllocatedQty(record.orderId, record.productId, e.target.value);
+                                                                        }}
+                                                                        onClick={(e) => e.stopPropagation()} 
+                                                                    />
+                                                                ) : (
+                                                                    <span 
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setEditingAllocatedQtyId(`${record.orderId}-${record.productId}-detail`);
+                                                                        }}
+                                                                        className="font-bold text-indigo-600 cursor-pointer border-b border-dashed border-transparent hover:border-indigo-300"
+                                                                    >
+                                                                        {record.allocatedQty || 0}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <span className="text-slate-400 text-xs">/</span>
+                                                            <div className="flex items-center bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm">
+                                                                <span className="text-xs text-slate-400 mr-1">喊:</span>
+                                                                {editingOrderQtyId === `${record.orderId}-${record.productId}-detail` ? (
+                                                                    <input 
+                                                                        autoFocus
+                                                                        type="number"
+                                                                        className="w-8 text-center font-bold text-sm p-0 outline-none border-b border-slate-500 text-slate-700"
+                                                                        defaultValue={record.qty}
+                                                                        onBlur={(e) => handleUpdateOrderQty(record.orderId, record.productId, e.target.value)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') handleUpdateOrderQty(record.orderId, record.productId, e.target.value);
+                                                                        }}
+                                                                        onClick={(e) => e.stopPropagation()} 
+                                                                    />
+                                                                ) : (
+                                                                    <span 
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setEditingOrderQtyId(`${record.orderId}-${record.productId}-detail`);
+                                                                        }}
+                                                                        className="font-bold text-slate-700 cursor-pointer border-b border-dashed border-transparent hover:border-slate-300"
+                                                                    >
+                                                                        {record.qty}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            
+                                                            {/* 刪除按鈕 */}
+                                                            <button 
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleDeleteOrderItem(record.orderId, record.productId);
+                                                                }}
+                                                                className="text-slate-300 hover:text-rose-600 p-1 ml-1"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Modal: 顧客詳情 (含編輯數量功能) */}
+                    {selectedCustomerDetail && currentSelectedCustomer && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[160] p-0 md:p-4 animate-in">
+                            <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[85vh] flex flex-col">
+                                {/* Header (新增加單按鈕) */}
+                                <div className="p-6 bg-indigo-600 text-white shrink-0 relative rounded-t-[30px] flex justify-between">
+                                    <div>
+                                        <h3 className="text-xl font-black">{currentSelectedCustomer.name}</h3>
+                                        <div className="flex flex-col gap-1 mt-2">
+                                            <span className="text-indigo-200 text-xs font-bold">消費總額 ${currentSelectedCustomer.totalSpent.toLocaleString()}</span>
+                                            <span className="text-emerald-300 text-xs font-bold">已付金額 ${currentSelectedCustomer.totalPaid.toLocaleString()}</span>
+                                            {currentSelectedCustomer.debt > 0 ? (
+                                                <span className="text-rose-300 text-xs font-bold">尚未欠款 ${currentSelectedCustomer.debt.toLocaleString()}</span>
+                                            ) : (
+                                                <span className="text-white/50 text-xs font-bold">✅ 已結清</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2 items-start">
+                                        <button onClick={() => {
+                                            setProxyForm(prev => ({ ...prev, customer: currentSelectedCustomer.name }));
+                                            setShowProxyOrder(true);
+                                        }} className="bg-white/20 p-2 rounded-full hover:bg-white/30 text-white" title="加單">
+                                            <Plus size={18} />
+                                        </button>
+                                        <button onClick={() => setShowPaymentInput(!showPaymentInput)} className="bg-white/20 p-2 rounded-full hover:bg-white/30 text-white" title="登記收款">
+                                            <CreditCard size={18} />
+                                        </button>
+                                        <button onClick={() => handleCopyCustomerDetails(currentSelectedCustomer)} className="bg-white/20 p-2 rounded-full hover:bg-white/30 text-white" title="複製明細">
+                                            <Copy size={18} />
+                                        </button>
+                                        <button onClick={() => setSelectedCustomerDetail(null)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 text-white"><X size={18}/></button>
+                                    </div>
+                                </div>
+                                
+                                {/* 收款輸入區塊 (維持原樣) */}
+                                {showPaymentInput && (
+                                    <div className="bg-indigo-700 p-4 flex gap-2 animate-in">
+                                        <input 
+                                            type="number" 
+                                            placeholder="輸入收款金額 (負數為退款)" 
+                                            className="flex-1 bg-white/10 border border-white/20 rounded-xl p-2 text-white placeholder:text-white/50 outline-none"
+                                            value={paymentAmount}
+                                            onChange={(e) => setPaymentAmount(e.target.value)}
+                                        />
+                                        <button onClick={handleCustomerPayment} className="bg-emerald-500 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg">確認</button>
+                                    </div>
+                                )}
+
+                                <div className="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar pb-20">
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">購物明細 (點擊數量修改)</h4>
+                                    {currentSelectedCustomer.items.map((item, idx) => (
+                                        <div key={idx} className="flex justify-between items-center p-3 border-b border-slate-50 last:border-0 group">
+                                            <div>
+                                                <p className="font-bold text-slate-800 text-sm flex items-center gap-1">
+                                                    {item.name} 
+                                                    {item.isDiscounted && <span className="text-[10px] bg-rose-100 text-rose-600 px-1 rounded font-bold">優惠</span>}
+                                                </p>
+                                                <span className="text-xs font-normal text-slate-500">({item.variant})</span>
+                                                <p className="text-xs text-slate-400 mt-0.5">${item.finalPrice} x {item.qty}</p>
+                                            </div>
+                                            <div className="text-right flex flex-col items-end gap-1">
+                                                <div className="flex items-center gap-2">
+                                                    {editingOrderQtyId === `${item.orderId}-${item.productId}` ? (
+                                                        <input 
+                                                            autoFocus
+                                                            type="number"
+                                                            className="w-12 bg-slate-100 border border-indigo-300 rounded text-center font-bold text-sm p-1 outline-none"
+                                                            defaultValue={item.qty}
+                                                            onBlur={(e) => handleUpdateOrderQty(item.orderId, item.productId, e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') handleUpdateOrderQty(item.orderId, item.productId, e.target.value);
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <span className="font-bold text-slate-900 block">${item.itemTotal}</span>
+                                                    )}
+                                                    
+                                                    {/* 編輯按鈕 */}
+                                                    <button 
+                                                        onClick={() => setEditingOrderQtyId(`${item.orderId}-${item.productId}`)}
+                                                        className="text-slate-400 hover:text-indigo-600 p-1"
+                                                    >
+                                                        <Edit size={14} />
+                                                    </button>
+                                                    {/* 刪除單筆商品按鈕 */}
+                                                    <button 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDeleteOrderItem(item.orderId, item.productId);
+                                                        }}
+                                                        className="text-slate-300 hover:text-rose-600 p-1 bg-slate-50 rounded-full"
+                                                        title="刪除此商品"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${item.isAllocated ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                    {item.isAllocated ? '已配貨' : '待排單'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Modal: 廠商採購單 (顯示精準缺貨數字) */}
+                    {showPurchaseList && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[150] p-0 md:p-4 animate-in">
+                            <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[85vh] flex flex-col">
+                                <div className="bg-slate-800 text-white p-6 relative overflow-hidden rounded-t-[30px] shrink-0">
+                                    <Truck className="absolute -right-6 -top-6 text-slate-700 w-32 h-32 opacity-50" />
+                                    <h3 className="text-2xl font-black relative z-10">廠商採購清單</h3>
+                                    <p className="text-slate-400 text-xs font-bold relative z-10">Purchase Order (缺貨統計)</p>
+                                    <button onClick={() => setShowPurchaseList(false)} className="absolute top-4 right-4 bg-white/10 p-2 rounded-full hover:bg-white/20"><X size={20}/></button>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-2 no-scrollbar">
+                                    {purchaseList.length === 0 ? (
+                                        <div className="p-8 text-center text-slate-400 font-bold">目前庫存充足，無需採購 🎉</div>
+                                    ) : (
+                                        purchaseList.map((p, idx) => (
+                                            <div key={p.id} className="flex justify-between items-center p-4 border-b border-slate-50 last:border-0">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-slate-300 font-mono text-xs font-bold">{idx + 1}</span>
+                                                    <div>
+                                                        <p className="font-bold text-slate-800">{p.name}</p>
+                                                        <p className="text-[10px] text-slate-400">{p.variant}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-xs text-slate-400 font-bold mb-1">缺</p>
+                                                    {editingPurchaseQtyId === p.id ? (
+                                                        <input 
+                                                            autoFocus
+                                                            type="number"
+                                                            className="w-16 bg-white border-b-2 border-rose-500 text-center font-black text-lg p-0 outline-none text-rose-600"
+                                                            defaultValue={p.shortage}
+                                                            onBlur={(e) => handleUpdatePurchaseQty(p.id, e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') handleUpdatePurchaseQty(p.id, e.target.value);
+                                                            }}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        />
+                                                    ) : (
+                                                        <div 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setEditingPurchaseQtyId(p.id);
+                                                            }}
+                                                            className="bg-rose-50 text-rose-600 px-3 py-1 rounded-lg font-black text-lg cursor-pointer border border-transparent hover:border-rose-200"
+                                                        >
+                                                            {p.shortage}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         };
