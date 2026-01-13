@@ -193,6 +193,11 @@
             const [editingPurchaseQtyId, setEditingPurchaseQtyId] = useState(null);
             
             const [exportTargetCustomer, setExportTargetCustomer] = useState(null); 
+            
+            // 批次下載狀態
+            const [isBatchMode, setIsBatchMode] = useState(false);
+            const [batchSelection, setBatchSelection] = useState(new Set());
+            const [isProcessingBatch, setIsProcessingBatch] = useState(false);
 
             const [proxyForm, setProxyForm] = useState({
                 productName: '', variant: '', price: '', customer: '', qty: 1, purchasedQty: 0
@@ -394,6 +399,43 @@
                     notify("圖片已匯出");
                 } catch (err) { console.error(err); notify("匯出失敗"); } finally { setExportTargetCustomer(null); }
             };
+
+            // 批次匯出圖片邏輯
+            const handleBatchExportImages = async () => {
+                if (batchSelection.size === 0) return notify("請先勾選顧客");
+                
+                setIsProcessingBatch(true);
+                const zip = new JSZip();
+                
+                try {
+                    const targets = customerList.filter(c => batchSelection.has(c.name));
+                    
+                    for (const customer of targets) {
+                        setExportTargetCustomer(customer);
+                        // 等待 React 渲染 DOM
+                        await new Promise(r => setTimeout(r, 200));
+                        
+                        const element = document.getElementById('hidden-receipt-container');
+                        if (element) {
+                            const canvas = await html2canvas(element, { useCORS: true, backgroundColor: '#FCF4E9', scale: 2 });
+                            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+                            zip.file(`${customer.name}_訂單明細.png`, blob);
+                        }
+                    }
+                    
+                    const content = await zip.generateAsync({type: "blob"});
+                    saveAs(content, `CuiboWMS_Receipts_${new Date().toISOString().slice(0,10)}.zip`);
+                    notify("批次匯出完成");
+                    setBatchSelection(new Set());
+                    setIsBatchMode(false);
+                } catch (err) {
+                    console.error(err);
+                    notify("匯出失敗");
+                } finally {
+                    setExportTargetCustomer(null);
+                    setIsProcessingBatch(false);
+                }
+            };
             
             const handleClearData = () => {
                 if (confirm("⚠️ 警告：您確定要清除所有資料嗎？\n\n此操作將清空所有商品與訂單，讓您重新開始。\n請務必確認您已備份！")) {
@@ -565,16 +607,61 @@
                             </div>
                         )}
 
-                        {/* Customers List */}
-                        {activeTab === 'customers' && filteredCustomers.map(c => (
-                            <div key={c.name} onClick={() => setSelectedCustomerDetail(c)} className="bg-white rounded-3xl p-5 shadow-soft border border-cream-200 flex justify-between items-center cursor-pointer mb-2 active:scale-[0.99] transition-all hover:border-latte-200">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-cream-100 text-latte-600 rounded-full flex items-center justify-center font-bold border border-cream-200 text-lg shadow-sm">{c.name[0]}</div>
-                                    <h4 className="font-bold text-latte-800 text-lg">{c.name}</h4>
+                        {/* Customers List with Batch Selection */}
+                        {activeTab === 'customers' && (
+                            <div className="space-y-2">
+                                {/* 批次模式開關與標題 */}
+                                <div className="flex justify-between items-center px-1 mb-2">
+                                    <span className="text-xs font-bold text-latte-400">共 {filteredCustomers.length} 位顧客</span>
+                                     <button onClick={() => { setIsBatchMode(!isBatchMode); setBatchSelection(new Set()); }} className={`text-xs px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 transition-colors ${isBatchMode ? 'bg-latte-500 text-white shadow-md' : 'bg-cream-100 text-latte-500 hover:bg-cream-200'}`}>
+                                        <ImageIcon size={14}/> {isBatchMode ? '取消選取' : '批次存圖'}
+                                     </button>
                                 </div>
-                                <p className="font-black text-latte-500 text-lg">${c.totalSpent.toLocaleString()}</p>
+
+                                {filteredCustomers.map(c => (
+                                    <div key={c.name} 
+                                        onClick={() => {
+                                            if (isBatchMode) {
+                                                const newSet = new Set(batchSelection);
+                                                if (newSet.has(c.name)) newSet.delete(c.name);
+                                                else newSet.add(c.name);
+                                                setBatchSelection(newSet);
+                                            } else {
+                                                setSelectedCustomerDetail(c);
+                                            }
+                                        }} 
+                                        className={`bg-white rounded-3xl p-5 shadow-soft border border-cream-200 flex justify-between items-center cursor-pointer mb-2 active:scale-[0.99] transition-all hover:border-latte-200 ${isBatchMode && batchSelection.has(c.name) ? 'ring-2 ring-latte-500 ring-offset-2' : ''}`}
+                                    >
+                                        <div className="flex items-center gap-4">
+                                            {/* 批次選取勾選框 */}
+                                            {isBatchMode && (
+                                                <div className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-colors ${batchSelection.has(c.name) ? 'bg-latte-500 border-latte-500 text-white' : 'border-cream-300 bg-cream-50'}`}>
+                                                    {batchSelection.has(c.name) && <CheckSquare size={16}/>}
+                                                </div>
+                                            )}
+                                            <div className="w-12 h-12 bg-cream-100 text-latte-600 rounded-full flex items-center justify-center font-bold border border-cream-200 text-lg shadow-sm">{c.name[0]}</div>
+                                            <h4 className="font-bold text-latte-800 text-lg">{c.name}</h4>
+                                        </div>
+                                        <p className="font-black text-latte-500 text-lg">${c.totalSpent.toLocaleString()}</p>
+                                    </div>
+                                ))}
+
+                                {/* 批次操作懸浮列 */}
+                                {isBatchMode && (
+                                    <div className="fixed bottom-24 left-0 right-0 flex justify-center z-[90] animate-in pointer-events-none">
+                                        <div className="bg-white/95 backdrop-blur border border-cream-200 shadow-xl rounded-full pl-6 pr-2 py-2 flex gap-4 items-center pointer-events-auto">
+                                            <span className="font-bold text-latte-800 text-sm whitespace-nowrap">已選 {batchSelection.size} 位</span>
+                                            <div className="flex gap-1">
+                                                 <button onClick={() => setBatchSelection(new Set(filteredCustomers.map(c => c.name)))} className="px-3 py-1.5 text-xs font-bold text-latte-500 hover:bg-cream-100 rounded-lg transition-colors">全選</button>
+                                                 <button onClick={handleBatchExportImages} disabled={batchSelection.size === 0 || isProcessingBatch} className="bg-[#AEC8DB] text-white px-4 py-1.5 rounded-xl font-bold text-xs shadow-sm shadow-[#AEC8DB]/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 hover:brightness-105 active:scale-95 transition-all">
+                                                    {isProcessingBatch ? <Loader2 className="animate-spin" size={14}/> : <Download size={14}/>} 下載圖片
+                                                 </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
-                        ))}
+                        )}
 
                         {/* Arrivals List */}
                         {activeTab === 'arrivals' && (
