@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>智慧連線倉庫管理系統 (雲端API版)</title>
+    <title>智慧連線倉庫管理系統</title>
     
     <!-- 1. 載入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -44,9 +44,20 @@
             Image as ImageIcon, Download, Loader2, Upload, Cloud, Settings, UploadCloud, DownloadCloud
         } from 'https://esm.sh/lucide-react@0.263.1?dev';
 
+        // Firebase Imports (Optional for API logic but kept for completeness if needed later)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, setDoc, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
+
+        // Firebase Configuration (Empty dummy for now as we use Local + API)
+        const firebaseConfig = JSON.parse(__firebase_config || '{}');
+        // const app = initializeApp(firebaseConfig); // Commented out to avoid errors if config is missing
+        // const auth = getAuth(app);
+        // const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
         const App = () => {
-            // --- 1. State Definitions ---
-            // 從 localStorage 讀取資料，如果沒有則使用預設值
+            // --- 1. State Definitions (Local State) ---
             const loadLocal = (key, def) => {
                 const saved = localStorage.getItem(key);
                 return saved ? JSON.parse(saved) : def;
@@ -56,13 +67,19 @@
                 { id: 'p1', name: '日本極致吹風機', variant: '珍珠白', spot: 2, price: 3200, tierMinQty: 0, tierPrice: 0 },
                 { id: 'p2', name: '日本極致吹風機', variant: '消光黑', spot: 3, price: 3200, tierMinQty: 0, tierPrice: 0 },
                 { id: 'p3', name: '法式黑巧克力盒', variant: '單一款式', spot: 20, price: 450, tierMinQty: 0, tierPrice: 0 },
+                { id: 'p4', name: '韓國限定運動鞋', variant: '24cm', spot: 0, price: 2800, tierMinQty: 0, tierPrice: 0 },
+                { id: 'p5', name: '膠原蛋白粉', variant: '罐裝', spot: 30, price: 980, tierMinQty: 0, tierPrice: 0 },
+                { id: 'p6', name: '環保購物袋', variant: '藍色', spot: 2, price: 150, tierMinQty: 0, tierPrice: 0 },
             ]));
             const [orders, setOrders] = useState(() => loadLocal('smartwms_orders', [
                 { id: 'o1', customer: '林小美', total: 6400, paid: 0, status: '部分到貨', items: [{ productId: 'p1', name: '日本極致吹風機', variant: '珍珠白', qty: 2, allocatedQty: 1, price: 3200 }], debt: 0, unclaimed: 1 },
+                { id: 'o2', customer: '王大同', total: 450, paid: 0, status: '待結單', items: [{ productId: 'p3', name: '法式黑巧克力盒', variant: '單一款式', qty: 1, allocatedQty: 0, price: 450 }], debt: 0, unclaimed: 0 },
             ]));
+            
+            // API URL State
             const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('smartwms_api_url') || '');
 
-            // 保存到 localStorage
+            // Local Storage Persistence
             useEffect(() => { localStorage.setItem('smartwms_products', JSON.stringify(products)); }, [products]);
             useEffect(() => { localStorage.setItem('smartwms_orders', JSON.stringify(orders)); }, [orders]);
             useEffect(() => { localStorage.setItem('smartwms_api_url', apiUrl); }, [apiUrl]);
@@ -80,8 +97,11 @@
             const [selectedArrivalCustomer, setSelectedArrivalCustomer] = useState(null); 
             
             const [isEditingProduct, setIsEditingProduct] = useState(false);
-            const [isSyncing, setIsSyncing] = useState(false); // 同步中狀態
+            const [showPaymentInput, setShowPaymentInput] = useState(false);
+            const [paymentAmount, setPaymentAmount] = useState('');
+            const [isSyncing, setIsSyncing] = useState(false);
             
+            // Editable IDs
             const [editingOrderQtyId, setEditingOrderQtyId] = useState(null);
             const [editingAllocatedQtyId, setEditingAllocatedQtyId] = useState(null);
             const [editingArrivedQtyId, setEditingArrivedQtyId] = useState(null);
@@ -99,6 +119,8 @@
             const [notification, setNotification] = useState(null);
             const [searchQuery, setSearchQuery] = useState('');
             
+            const fileInputRef = useRef(null);
+
             const notify = (msg) => {
                 setNotification(msg);
                 setTimeout(() => setNotification(null), 3000);
@@ -225,6 +247,7 @@
             
             const availableVariants = useMemo(() => [...new Set(products.filter(p => p.name === proxyForm.productName).map(p => p.variant))], [products, proxyForm.productName]);
 
+            // --- 5. Selected Helpers ---
             const currentSelectedCustomer = selectedCustomerDetail ? customerList.find(c => c.name === selectedCustomerDetail.name) : null;
             const currentSelectedArrivalCustomer = selectedArrivalCustomer 
                 ? (selectedArrivalCustomer.source === 'shipped' 
@@ -234,41 +257,20 @@
                 : null;
             const isArrivalShipped = currentSelectedArrivalCustomer && !orders.some(o => o.customer === currentSelectedArrivalCustomer.name && o.status !== '已出貨');
 
-            // --- API Sync Functions ---
 
+            // --- 6. API Functions ---
             const handleCloudUpload = async () => {
                 if (!apiUrl) { notify("請先設定 API 網址"); setShowSettings(true); return; }
                 setIsSyncing(true);
                 try {
-                    const payload = { products, orders, updatedAt: new Date().toISOString() };
-                    // 使用 fetch 傳送 POST 請求
-                    // Note: Google Apps Script Web App 必須部署為 'Me' + 'Anyone' 才能跨域存取，且需處理 redirect
-                    // 這裡使用 'no-cors' 模式發送，雖然拿不到回應，但能成功送出資料
-                    // 若要拿回應，後端需正確設定 CORS headers
-                    const response = await fetch(apiUrl, {
+                    await fetch(apiUrl, {
                         method: 'POST',
-                        body: JSON.stringify(payload)
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ products, orders, updatedAt: new Date().toISOString() })
                     });
-                    const res = await response.json();
-                    if(res.result === 'success') notify("☁️ 上傳備份成功！");
-                    else notify("上傳失敗，請檢查 API");
-                } catch (error) {
-                    console.error("Upload error:", error);
-                    // 嘗試用 no-cors
-                    try {
-                        await fetch(apiUrl, {
-                             method: 'POST',
-                             mode: 'no-cors',
-                             headers: { 'Content-Type': 'application/json' },
-                             body: JSON.stringify({ products, orders, updatedAt: new Date().toISOString() })
-                        });
-                        notify("☁️ 已發送備份請求");
-                    } catch(e) {
-                         notify("連線失敗");
-                    }
-                } finally {
-                    setIsSyncing(false);
-                }
+                    notify("☁️ 上傳備份請求已發送");
+                } catch (error) { console.error(error); notify("上傳失敗"); } finally { setIsSyncing(false); }
             };
 
             const handleCloudDownload = async () => {
@@ -283,18 +285,11 @@
                             setOrders(data.orders);
                             notify("☁️ 下載同步成功！");
                         }
-                    } else {
-                        notify("雲端無資料或格式錯誤");
-                    }
-                } catch (error) {
-                    console.error("Download error:", error);
-                    notify("下載失敗，請檢查 API");
-                } finally {
-                    setIsSyncing(false);
-                }
+                    } else { notify("雲端資料格式錯誤或為空"); }
+                } catch (error) { console.error(error); notify("下載失敗"); } finally { setIsSyncing(false); }
             };
 
-            // --- Handlers ---
+            // --- 7. Handlers ---
             const navigateTo = (tab) => { setActiveTab(tab); setSearchQuery(''); };
             const handleProxyProductChange = (e) => {
                 const name = e.target.value;
@@ -425,6 +420,30 @@
                 notify("已回復");
             };
 
+            const handleCustomerPayment = () => {
+                const amt = parseInt(paymentAmount); if(!amt || !selectedCustomerDetail) return;
+                const custOrders = orders.filter(o=>o.customer===selectedCustomerDetail.name);
+                let rem = Math.abs(amt); const isRef = amt < 0;
+                
+                setOrders(prev => prev.map(o => {
+                    if(o.customer !== selectedCustomerDetail.name) return o;
+                    if(rem <= 0) return o;
+                    
+                    const total = o.items.reduce((s, i) => s + i.qty * i.price, 0);
+                    const debt = Math.max(0, total - (o.paid||0));
+                    
+                    if(!isRef && debt > 0) {
+                        const p = Math.min(debt, rem); rem -= p;
+                        return { ...o, paid: (o.paid||0) + p };
+                    } else if(isRef && (o.paid||0) > 0) {
+                        const r = Math.min(o.paid, rem); rem -= r;
+                        return { ...o, paid: o.paid - r };
+                    }
+                    return o;
+                }));
+                setPaymentAmount(''); setShowPaymentInput(false); notify("金額更新");
+            };
+
             const handleAddOrder = () => {
                 const { productName, variant, price, customer, qty, purchasedQty } = proxyForm;
                 const finalVariant = variant || '單一款式';
@@ -486,11 +505,9 @@
                 } catch (err) { console.error(err); notify("匯出失敗"); }
             };
 
-            // 顧客選取切換
             const toggleCustomerSelection = (name) => {
                 const newSet = new Set(selectedCustomerIds);
-                if (newSet.has(name)) newSet.delete(name);
-                else newSet.add(name);
+                if (newSet.has(name)) newSet.delete(name); else newSet.add(name);
                 setSelectedCustomerIds(newSet);
             };
 
@@ -531,6 +548,22 @@
                 link.download = `orders.csv`;
                 link.click();
             };
+            
+            const handleCheckout = (orderId) => {
+                setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: '待出貨', paid: o.total, debt: 0 } : o));
+                notify("結單成功");
+            };
+
+            // 確保函式在 JSX 中被呼叫
+            const getGroupAllocations = (name) => {
+                const res = [];
+                products.filter(p=>p.name===name).forEach(p => {
+                    orders.forEach(o => o.items.forEach(i => {
+                        if(i.productId===p.id) res.push({ ...i, orderId: o.id, customer: o.customer });
+                    }));
+                });
+                return res;
+            };
 
             return (
                 <div className="min-h-screen pb-24">
@@ -559,7 +592,7 @@
 
                     {/* Header */}
                     <div className="bg-indigo-600 text-white p-4 shadow-lg sticky top-0 z-50 flex justify-between items-center max-w-2xl mx-auto">
-                        <h1 className="text-xl font-bold flex items-center gap-2" onClick={() => navigateTo('dashboard')}><Zap className="fill-yellow-400 text-yellow-400" /> Smart WMS <span className="text-[10px] bg-white/20 px-2 py-1 rounded">API</span></h1>
+                        <h1 className="text-xl font-bold flex items-center gap-2" onClick={() => navigateTo('dashboard')}><Zap className="fill-yellow-400 text-yellow-400" /> Smart WMS <span className="text-[10px] bg-white/20 px-2 py-1 rounded">API版</span></h1>
                     </div>
 
                     {/* Nav */}
@@ -619,7 +652,7 @@
                                     </div>
                                     <div className="flex gap-2">
                                         {selectedCustomerIds.size > 0 && <button onClick={handleBatchExportImages} className="bg-indigo-500 text-white px-2 py-1.5 rounded-lg text-xs font-bold flex gap-1 shadow-sm"><ImageIcon size={14}/> 下載圖片</button>}
-                                        <button onClick={handleExportToCSV} className="bg-emerald-500 text-white px-2 py-1.5 rounded-lg text-xs font-bold flex gap-1 shadow-sm"><FileSpreadsheet size={14}/> 報表</button>
+                                        <button onClick={handleExportToCSV} className="bg-emerald-500 text-white px-2 py-1.5 rounded-lg text-xs font-bold flex gap-1 shadow-sm"><FileSpreadsheet size={14}/> 匯出報表</button>
                                     </div>
                                 </div>
                                 {filteredCustomers.map(c => (
@@ -674,13 +707,7 @@
 
                     <div className="fixed bottom-6 right-6 z-[100]"><button onClick={() => setShowProxyOrder(true)} className="w-16 h-16 bg-indigo-600 text-white rounded-full shadow-2xl flex items-center justify-center active:scale-95 transition-all"><Plus size={32}/></button></div>
 
-                    {/* Modals - Simplified for display, full logic present in processing */}
-                    {showProxyOrder && <div className="fixed inset-0 bg-black/50 z-[200] flex items-end md:items-center justify-center p-4"><div className="bg-white rounded-3xl w-full max-w-md p-5 space-y-4"><h3 className="font-bold border-b pb-2">代客加單/入庫</h3><input placeholder="商品名稱" className="w-full border p-2 rounded" list="pl" value={proxyForm.productName} onChange={handleProxyProductChange}/><datalist id="pl">{[...new Set(products.map(p=>p.name))].map(n=><option key={n} value={n}/>)}</datalist><div className="flex gap-2"><input placeholder="款式" className="w-full border p-2 rounded" list="vl" value={proxyForm.variant} onChange={e=>setProxyForm({...proxyForm,variant:e.target.value})}/><datalist id="vl">{availableVariants.map(v=><option key={v} value={v}/>)}</datalist><input type="number" placeholder="$" className="w-20 border p-2 rounded" value={proxyForm.price} onChange={e=>setProxyForm({...proxyForm,price:e.target.value})}/></div><div className="flex gap-2"><input placeholder="顧客(選填)" className="w-full border p-2 rounded" list="cl" value={proxyForm.customer} onChange={e=>setProxyForm({...proxyForm,customer:e.target.value})}/><datalist id="cl">{customerList.map(c=><option key={c.name} value={c.name}/>)}</datalist><input type="number" placeholder="數" className="w-20 border p-2 rounded" value={proxyForm.qty} onChange={e=>setProxyForm({...proxyForm,qty:e.target.value})}/></div><input type="number" placeholder="購買/現貨數量" className="w-full border p-2 rounded bg-indigo-50" value={proxyForm.purchasedQty} onChange={e=>setProxyForm({...proxyForm,purchasedQty:e.target.value})}/><button onClick={handleAddOrder} className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold">確認</button><button onClick={()=>setShowProxyOrder(false)} className="w-full mt-2 text-slate-400 text-sm">取消</button></div></div>}
-
-                    {showRevenueList && <div className="fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4"><div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col"><div className="p-4 border-b flex justify-between"><h3>營收總覽</h3><button onClick={()=>setShowRevenueList(false)}><X/></button></div><div className="flex-1 overflow-y-auto p-4 space-y-2">{revenueCustomers.map(c=><div key={c.name} onClick={()=>{setShowRevenueList(false);setSelectedCustomerDetail(c)}} className="flex justify-between p-3 border rounded-xl items-center cursor-pointer"><span className="font-bold">{c.name}</span><span>${c.totalSpent.toLocaleString()}</span></div>)}</div></div></div>}
-                    
-                    {showPurchaseList && <div className="fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4"><div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col"><div className="p-4 border-b flex justify-between"><h3>採購清單</h3><button onClick={()=>setShowPurchaseList(false)}><X/></button></div><div className="flex-1 overflow-y-auto p-4 space-y-2">{purchaseList.map(p=><div key={p.id} className="flex justify-between p-3 border-b"><div><div className="font-bold">{p.name}</div><div className="text-xs text-slate-500">{p.variant}</div></div><div className="flex items-center gap-2"><span className="text-xs text-slate-400">缺</span>{editingPurchaseQtyId===p.id?<input autoFocus className="w-12 border rounded text-center" type="number" defaultValue={p.shortage} onBlur={e=>handleUpdatePurchaseQty(p.id,e.target.value)}/>:<span onClick={()=>setEditingPurchaseQtyId(p.id)} className="text-rose-600 font-black text-lg cursor-pointer">{p.shortage}</span>}</div></div>)}</div></div></div>}
-
+                    {/* Modals */}
                     {/* Settings Modal */}
                     {showSettings && (
                         <div className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4">
@@ -695,13 +722,19 @@
                             </div>
                         </div>
                     )}
+                    {showProxyOrder && <div className="fixed inset-0 bg-black/50 z-[200] flex items-end md:items-center justify-center p-4"><div className="bg-white rounded-3xl w-full max-w-md p-5 space-y-4"><h3 className="font-bold border-b pb-2">代客加單/入庫</h3><input placeholder="商品名稱" className="w-full border p-2 rounded" list="pl" value={proxyForm.productName} onChange={handleProxyProductChange}/><datalist id="pl">{[...new Set(products.map(p=>p.name))].map(n=><option key={n} value={n}/>)}</datalist><div className="flex gap-2"><input placeholder="款式" className="w-full border p-2 rounded" list="vl" value={proxyForm.variant} onChange={e=>setProxyForm({...proxyForm,variant:e.target.value})}/><datalist id="vl">{availableVariants.map(v=><option key={v} value={v}/>)}</datalist><input type="number" placeholder="$" className="w-20 border p-2 rounded" value={proxyForm.price} onChange={e=>setProxyForm({...proxyForm,price:e.target.value})}/></div><div className="flex gap-2"><input placeholder="顧客(選填)" className="w-full border p-2 rounded" list="cl" value={proxyForm.customer} onChange={e=>setProxyForm({...proxyForm,customer:e.target.value})}/><datalist id="cl">{customerList.map(c=><option key={c.name} value={c.name}/>)}</datalist><input type="number" placeholder="數" className="w-20 border p-2 rounded" value={proxyForm.qty} onChange={e=>setProxyForm({...proxyForm,qty:e.target.value})}/></div><input type="number" placeholder="購買/現貨數量" className="w-full border p-2 rounded bg-indigo-50" value={proxyForm.purchasedQty} onChange={e=>setProxyForm({...proxyForm,purchasedQty:e.target.value})}/><button onClick={handleAddOrder} className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold">確認</button><button onClick={()=>setShowProxyOrder(false)} className="w-full mt-2 text-slate-400 text-sm">取消</button></div></div>}
 
+                    {showRevenueList && <div className="fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4"><div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col"><div className="p-4 border-b flex justify-between"><h3>營收總覽</h3><button onClick={()=>setShowRevenueList(false)}><X/></button></div><div className="flex-1 overflow-y-auto p-4 space-y-2">{revenueCustomers.map(c=><div key={c.name} onClick={()=>{setShowRevenueList(false);setSelectedCustomerDetail(c)}} className="flex justify-between p-3 border rounded-xl items-center cursor-pointer"><span className="font-bold">{c.name}</span><span>${c.totalSpent.toLocaleString()}</span></div>)}</div></div></div>}
+                    
+                    {showPurchaseList && <div className="fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4"><div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col"><div className="p-4 border-b flex justify-between"><h3>採購清單</h3><button onClick={()=>setShowPurchaseList(false)}><X/></button></div><div className="flex-1 overflow-y-auto p-4 space-y-2">{purchaseList.map(p=><div key={p.id} className="flex justify-between p-3 border-b"><div><div className="font-bold">{p.name}</div><div className="text-xs text-slate-500">{p.variant}</div></div><div className="flex items-center gap-2"><span className="text-xs text-slate-400">缺</span>{editingPurchaseQtyId===p.id?<input autoFocus className="w-12 border rounded text-center" type="number" defaultValue={p.shortage} onBlur={e=>handleUpdatePurchaseQty(p.id,e.target.value)}/>:<span onClick={()=>setEditingPurchaseQtyId(p.id)} className="text-rose-600 font-black text-lg cursor-pointer">{p.shortage}</span>}</div></div>)}</div></div></div>}
+
+                    {/* Product Detail Modal */}
                     {selectedGroupName && <div className="fixed inset-0 bg-black/50 z-[150] flex items-end md:items-center justify-center p-0 md:p-4"><div className="bg-white rounded-t-[30px] md:rounded-3xl w-full max-w-md h-[85vh] flex flex-col"><div className="p-6 border-b flex justify-between"><h3>{selectedGroupName}</h3><button onClick={()=>setSelectedGroupName(null)}><X/></button></div><div className="flex-1 overflow-y-auto p-4 space-y-4">
                         <div className="bg-slate-50 p-3 rounded-xl"><table className="w-full text-xs text-center"><thead><tr className="text-slate-400"><th>款式</th><th>已配</th><th>待配</th><th>現貨</th>{isEditingProduct&&<th></th>}</tr></thead><tbody>{productsWithStats.filter(p=>p.name===selectedGroupName).map(p=><tr key={p.id}><td className="py-2 text-left">{p.variant}</td><td className="text-indigo-600">{p.confirmed}</td><td className="text-rose-500">{p.pending}</td><td>{isEditingProduct?<input className="w-10 text-center border rounded" defaultValue={p.spot} onBlur={e=>handleUpdateProductInfo(p.id,'spot',e.target.value)}/>:p.spot}</td>{isEditingProduct&&<td><button onClick={()=>handleDeleteProduct(p.id)} className="text-rose-500"><Trash2 size={14}/></button></td>}</tr>)}</tbody></table></div>
-                        <div><h4 className="text-xs font-bold text-slate-400 mb-2">配貨明細</h4>{getGroupAllocations(selectedGroupName).map((r,i)=><div key={i} className="flex justify-between items-center p-3 border rounded-xl mb-2"><div className="flex items-center gap-3"><button onClick={()=>toggleAllocation(r.orderId,r.productId,r.allocatedQty,r.qty)} className={`w-6 h-6 rounded border flex items-center justify-center ${r.isAllocated?'bg-indigo-600 text-white':''}`}><CheckSquare size={14}/></button><div><div className="font-bold text-sm">{r.customer}</div><div className="text-[10px] text-slate-500">{r.variant}</div></div></div><div className="text-sm">配 {r.allocatedQty} / 訂 {r.qty}</div></div>)}</div>
+                        <div><h4 className="text-xs font-bold text-slate-400 mb-2">配貨明細 (點擊修改數量)</h4>{getGroupAllocations(selectedGroupName).map((r,i)=><div key={i} className="flex justify-between items-center p-3 border rounded-xl mb-2"><div className="flex items-center gap-3"><button onClick={()=>toggleAllocation(r.orderId,r.productId,r.allocatedQty,r.qty)} className={`w-6 h-6 rounded border flex items-center justify-center ${r.isAllocated?'bg-indigo-600 text-white':''}`}><CheckSquare size={14}/></button><div><div className="font-bold text-sm">{r.customer}</div><div className="text-[10px] text-slate-500">{r.variant}</div></div></div><div className="flex items-center gap-1 text-sm"><span className="text-slate-400 text-xs">配</span>{editingAllocatedQtyId===`${r.orderId}-${r.productId}-detail`?<input autoFocus className="w-8 text-center border-b border-indigo-500 outline-none bg-transparent" defaultValue={r.allocatedQty} onBlur={e=>handleUpdateAllocatedQty(r.orderId,r.productId,e.target.value)}/>:<span onClick={()=>setEditingAllocatedQtyId(`${r.orderId}-${r.productId}-detail`)} className="font-bold text-indigo-600 cursor-pointer">{r.allocatedQty}</span>}<span className="text-slate-400 text-xs">/ 喊</span>{editingOrderQtyId===`${r.orderId}-${r.productId}-detail`?<input autoFocus className="w-8 text-center border-b border-slate-500 outline-none bg-transparent" defaultValue={r.qty} onBlur={e=>handleUpdateOrderQty(r.orderId,r.productId,e.target.value)}/>:<span onClick={()=>setEditingOrderQtyId(`${r.orderId}-${r.productId}-detail`)} className="font-bold cursor-pointer">{r.qty}</span>}</div></div>)}</div>
                     </div><div className="p-4 border-t flex justify-between"><button onClick={()=>{setProxyForm(prev=>({...prev,productName:selectedGroupName}));setShowProxyOrder(true)}} className="text-sm bg-slate-100 px-3 py-2 rounded-lg flex gap-1"><Plus size={16}/> 加單</button><button onClick={()=>setIsEditingProduct(!isEditingProduct)} className="text-sm bg-slate-100 px-3 py-2 rounded-lg flex gap-1"><Edit size={16}/> 編輯</button></div></div></div>}
 
-                    {/* Customer Detail (Removed Payment/Debt UI) */}
+                    {/* Customer Detail */}
                     {selectedCustomerDetail && currentSelectedCustomer && (
                         <div className="fixed inset-0 bg-black/50 z-[160] flex items-end md:items-center justify-center p-0 md:p-4">
                             <div className="bg-white rounded-t-[30px] md:rounded-3xl w-full max-w-md h-[85vh] flex flex-col">
@@ -765,7 +798,11 @@
                                                         <input autoFocus className="w-8 text-center border-b border-indigo-500 outline-none bg-transparent" defaultValue={item.allocatedQty||0} onBlur={e=>handleUpdateAllocatedQty(item.orderId,item.productId,e.target.value)}/> :
                                                         <span onClick={()=>!isArrivalShipped && setEditingAllocatedQtyId(`${item.orderId}-${item.productId}`)} className={`font-bold ${isDone?'text-emerald-600':'text-indigo-600'} ${!isArrivalShipped && 'cursor-pointer'}`}>{item.allocatedQty||0}</span>
                                                     }
-                                                    <span className="text-xs text-slate-400">/ 訂 {item.qty}</span>
+                                                    <span className="text-xs text-slate-400">/ 訂</span>
+                                                    {!isArrivalShipped && editingOrderQtyId===`${item.orderId}-${item.productId}` ?
+                                                        <input autoFocus className="w-8 text-center border-b border-slate-500 outline-none bg-transparent" defaultValue={item.qty} onBlur={e=>handleUpdateOrderQty(item.orderId,item.productId,e.target.value)}/> :
+                                                        <span onClick={()=>!isArrivalShipped && setEditingOrderQtyId(`${item.orderId}-${item.productId}`)} className="font-bold cursor-pointer">{item.qty}</span>
+                                                    }
                                                 </div>
                                             </div>
                                         )
