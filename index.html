@@ -44,23 +44,18 @@
             Image as ImageIcon, Download, Loader2, Upload, Cloud, Settings, UploadCloud, DownloadCloud
         } from 'https://esm.sh/lucide-react@0.263.1?dev';
 
-        // Firebase Imports (Optional for API logic but kept for completeness if needed later)
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, setDoc, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
-
-        // Firebase Configuration (Empty dummy for now as we use Local + API)
-        const firebaseConfig = JSON.parse(__firebase_config || '{}');
-        // const app = initializeApp(firebaseConfig); // Commented out to avoid errors if config is missing
-        // const auth = getAuth(app);
-        // const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        // 注意：已移除 Firebase 相關引用與設定，避免在 GitHub Pages 上因找不到 config 而報錯
 
         const App = () => {
             // --- 1. State Definitions (Local State) ---
             const loadLocal = (key, def) => {
-                const saved = localStorage.getItem(key);
-                return saved ? JSON.parse(saved) : def;
+                try {
+                    const saved = localStorage.getItem(key);
+                    return saved ? JSON.parse(saved) : def;
+                } catch (e) {
+                    console.error("Local storage load error", e);
+                    return def;
+                }
             };
 
             const [products, setProducts] = useState(() => loadLocal('smartwms_products', [
@@ -289,13 +284,16 @@
                 } catch (error) { console.error(error); notify("下載失敗"); } finally { setIsSyncing(false); }
             };
 
-            // --- 7. Handlers ---
+            // --- 7. Handlers (Local State Modifiers) ---
             const navigateTo = (tab) => { setActiveTab(tab); setSearchQuery(''); };
             const handleProxyProductChange = (e) => {
                 const name = e.target.value;
                 const existing = products.find(p => p.name === name);
                 setProxyForm(prev => ({ ...prev, productName: name, price: existing ? existing.price : prev.price }));
             };
+
+            // 移除備份下載功能，保留 import (空函式) 以防報錯，或直接刪除介面
+            // 您要求移除功能按鈕，所以相關介面已移除
 
             const handleUpdateOrderQty = (orderId, productId, newQtyStr) => {
                 const newQty = parseInt(newQtyStr, 10);
@@ -554,7 +552,6 @@
                 notify("結單成功");
             };
 
-            // 確保函式在 JSX 中被呼叫
             const getGroupAllocations = (name) => {
                 const res = [];
                 products.filter(p=>p.name===name).forEach(p => {
@@ -592,7 +589,7 @@
 
                     {/* Header */}
                     <div className="bg-indigo-600 text-white p-4 shadow-lg sticky top-0 z-50 flex justify-between items-center max-w-2xl mx-auto">
-                        <h1 className="text-xl font-bold flex items-center gap-2" onClick={() => navigateTo('dashboard')}><Zap className="fill-yellow-400 text-yellow-400" /> Smart WMS <span className="text-[10px] bg-white/20 px-2 py-1 rounded">API版</span></h1>
+                        <h1 className="text-xl font-bold flex items-center gap-2" onClick={() => navigateTo('dashboard')}><Zap className="fill-yellow-400 text-yellow-400" /> Smart WMS <span className="text-[10px] bg-white/20 px-2 py-1 rounded">Offline</span></h1>
                     </div>
 
                     {/* Nav */}
@@ -769,6 +766,7 @@
                         </div>
                     )}
                     
+                    {/* Arrival Modal (Updated: Editable Order Qty) */}
                     {currentSelectedArrivalCustomer && (
                         <div className="fixed inset-0 bg-black/50 z-[150] flex items-end md:items-center justify-center p-0 md:p-4">
                             <div className="bg-white rounded-t-[30px] md:rounded-3xl w-full max-w-md h-[85vh] flex flex-col">
