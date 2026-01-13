@@ -89,18 +89,22 @@
             Minus,
             TrendingUp,
             Wallet,
-            BoxSelect
+            BoxSelect,
+            Undo2,
+            PackageCheck
         } from 'https://esm.sh/lucide-react@0.263.1?dev';
 
         const App = () => {
             const [activeTab, setActiveTab] = useState('products');
             const [showProxyOrder, setShowProxyOrder] = useState(false);
             const [showPurchaseList, setShowPurchaseList] = useState(false);
-            const [showDebtList, setShowDebtList] = useState(false);
+            const [showRevenueList, setShowRevenueList] = useState(false);
             
             // 詳情彈窗狀態
             const [selectedGroupName, setSelectedGroupName] = useState(null); 
             const [selectedCustomerDetail, setSelectedCustomerDetail] = useState(null);
+            
+            // 到貨管理選中的顧客 (包含 source: 'pending' | 'shipped')
             const [selectedArrivalCustomer, setSelectedArrivalCustomer] = useState(null); 
             
             // 編輯與收款模式狀態
@@ -111,6 +115,7 @@
             // 編輯數量狀態 ID (格式: orderId-productId)
             const [editingOrderQtyId, setEditingOrderQtyId] = useState(null);
             const [editingAllocatedQtyId, setEditingAllocatedQtyId] = useState(null);
+            const [editingPurchaseQtyId, setEditingPurchaseQtyId] = useState(null);
 
             // 代客加單表單狀態
             const [proxyForm, setProxyForm] = useState({
@@ -129,16 +134,15 @@
             const [products, setProducts] = useState([
                 { id: 'A1', name: '日本極致吹風機', variant: '珍珠白', spot: 2, price: 3200, tierMinQty: 0, tierPrice: 0 },
                 { id: 'A2', name: '日本極致吹風機', variant: '消光黑', spot: 3, price: 3200, tierMinQty: 0, tierPrice: 0 },
-                { id: 'B2', name: '法式黑巧克力盒', variant: '單一款式', spot: 20, price: 450, tierMinQty: 2, tierPrice: 400 },
+                { id: 'B2', name: '法式黑巧克力盒', variant: '單一款式', spot: 20, price: 450, tierMinQty: 0, tierPrice: 0 },
                 { id: 'C3', name: '韓國限定運動鞋', variant: '24cm', spot: 0, price: 2800, tierMinQty: 0, tierPrice: 0 },
-                { id: 'D4', name: '膠原蛋白粉', variant: '罐裝', spot: 30, price: 980, tierMinQty: 3, tierPrice: 900 },
+                { id: 'D4', name: '膠原蛋白粉', variant: '罐裝', spot: 30, price: 980, tierMinQty: 0, tierPrice: 0 },
                 { id: 'E5', name: '環保購物袋', variant: '藍色', spot: 2, price: 150, tierMinQty: 0, tierPrice: 0 },
             ]);
 
             // 2. 狀態管理：訂單
-            // 使用 allocatedQty 代表 "已配貨/已到貨"
             const [orders, setOrders] = useState([
-                { id: 'ORD001', customer: '林小美', total: 6400, paid: 3200, status: '部分到貨', items: [{ productId: 'A1', name: '日本極致吹風機', variant: '珍珠白', qty: 2, allocatedQty: 1, price: 3200 }], debt: 3200, unclaimed: 1 },
+                { id: 'ORD001', customer: '林小美', total: 6400, paid: 3200, status: '部分到貨', items: [{ productId: 'A1', name: '日本極致吹風機', variant: '珍珠白', qty: 2, allocatedQty: 2, price: 3200 }], debt: 3200, unclaimed: 1 },
                 { id: 'ORD002', customer: '王大同', total: 450, paid: 0, status: '待結單', items: [{ productId: 'B2', name: '法式黑巧克力盒', variant: '單一款式', qty: 1, allocatedQty: 0, price: 450 }], debt: 450, unclaimed: 0 },
                 { id: 'ORD003', customer: '張雅婷', total: 5600, paid: 5600, status: '待出貨', items: [{ productId: 'C3', name: '韓國限定運動鞋', variant: '24cm', qty: 2, allocatedQty: 2, price: 2800 }], debt: 0, unclaimed: 2 },
             ]);
@@ -148,11 +152,15 @@
                 setTimeout(() => setNotification(null), 3000);
             };
 
-            // --- 核心邏輯：動態計算商品統計數據 ---
+            // ==========================================
+            //  核心運算區 (順序很重要)
+            // ==========================================
+
+            // 1. 商品統計 (Products Stats)
             const productsWithStats = useMemo(() => {
                 return products.map(p => {
                     let allocated = 0; // 總喊單
-                    let confirmed = 0; // 已配單
+                    let confirmed = 0; // 已配單 (Allocated/Supply)
 
                     orders.forEach(o => {
                         o.items.forEach(item => {
@@ -171,20 +179,259 @@
                 });
             }, [products, orders]);
 
-            // --- 功能函式 ---
+            // 2. 顧客清單 (Customer List)
+            const customerList = useMemo(() => {
+                const map = {};
+                
+                orders.forEach(o => {
+                    if (!map[o.customer]) {
+                        map[o.customer] = { 
+                            name: o.customer, 
+                            totalSpent: 0, 
+                            totalPaid: 0,
+                            orderCount: 0, 
+                            debt: 0, 
+                            items: [],
+                            rawItems: []
+                        };
+                    }
+                    map[o.customer].totalPaid += o.paid;
+                    map[o.customer].orderCount += 1;
+                    
+                    o.items.forEach(item => {
+                        map[o.customer].rawItems.push({
+                            ...item,
+                            orderId: o.id
+                        });
+                    });
+                });
+
+                // 計算優惠與總額
+                Object.values(map).forEach(cust => {
+                    const nameCounts = {};
+                    cust.rawItems.forEach(item => {
+                        const productInfo = products.find(p => p.id === item.productId);
+                        const productName = productInfo ? productInfo.name : item.name;
+                        if (!nameCounts[productName]) nameCounts[productName] = 0;
+                        nameCounts[productName] += item.qty;
+                    });
+
+                    cust.rawItems.forEach(item => {
+                        const productInfo = products.find(p => p.id === item.productId);
+                        let finalPrice = item.price;
+                        let originalPrice = item.price;
+                        let tierMinQty = 0;
+                        let tierPrice = 0;
+
+                        if (productInfo) {
+                            originalPrice = productInfo.price;
+                            tierMinQty = productInfo.tierMinQty;
+                            tierPrice = productInfo.tierPrice;
+                            
+                            const pName = productInfo.name;
+                            if (tierMinQty > 0 && nameCounts[pName] >= tierMinQty) {
+                                finalPrice = tierPrice;
+                            }
+                        }
+
+                        const itemTotal = item.qty * finalPrice;
+                        
+                        cust.items.push({
+                            ...item,
+                            finalPrice, 
+                            isDiscounted: finalPrice < originalPrice, 
+                            itemTotal,
+                            isAllocated: (item.allocatedQty || 0) >= item.qty
+                        });
+                        cust.totalSpent += itemTotal;
+                    });
+
+                    cust.debt = Math.max(0, cust.totalSpent - cust.totalPaid);
+                });
+
+                return Object.values(map);
+            }, [orders, products]);
+
+            // 3. 全域統計 (Stats)
+            const stats = useMemo(() => {
+                const totalDebt = customerList.reduce((acc, curr) => acc + curr.debt, 0);
+                const totalRevenue = customerList.reduce((acc, curr) => acc + curr.totalSpent, 0); 
+
+                let shortageItemCount = 0; 
+                let totalShortageQty = 0;  
+
+                productsWithStats.forEach(p => {
+                    if (p.shortage > 0) {
+                        shortageItemCount += 1;
+                        totalShortageQty += p.shortage;
+                    }
+                });
+
+                return {
+                    totalDebt,
+                    totalRevenue, 
+                    shortageItemCount,
+                    totalShortageQty,
+                    pendingShipment: orders.filter(o => o.status === '待出貨').length
+                };
+            }, [orders, productsWithStats, customerList]); 
+
+            // 4. 到貨管理資料 (Split into Pending and Shipped)
+            const { pendingArrivalCustomers, shippedArrivalCustomers } = useMemo(() => {
+                const pendingMap = {};
+                const shippedMap = {};
+
+                orders.forEach(o => {
+                    // 已出貨的訂單進入 shippedMap，其餘進入 pendingMap
+                    const targetMap = o.status === '已出貨' ? shippedMap : pendingMap;
+                    
+                    if (!targetMap[o.customer]) {
+                        targetMap[o.customer] = { name: o.customer, items: [] };
+                    }
+                    o.items.forEach(item => {
+                        targetMap[o.customer].items.push({
+                            ...item,
+                            orderId: o.id,
+                            isShipped: o.status === '已出貨'
+                        });
+                    });
+                });
+
+                const processMap = (map, source) => {
+                    return Object.values(map).map(cust => {
+                        const totalItemsCount = cust.items.length; 
+                        const arrivedItemsCount = cust.items.filter(i => (i.allocatedQty || 0) >= i.qty).length; 
+                        
+                        const totalQty = cust.items.reduce((sum, i) => sum + i.qty, 0); 
+                        const allocatedQty = cust.items.reduce((sum, i) => sum + (i.allocatedQty || 0), 0);
+
+                        const isFullyArrived = totalItemsCount > 0 && totalItemsCount === arrivedItemsCount;
+                        
+                        return {
+                            ...cust,
+                            source, // 標記來源
+                            totalItemsCount,
+                            arrivedItemsCount,
+                            totalQty,
+                            allocatedQty,
+                            isFullyArrived
+                        };
+                    }).sort((a, b) => {
+                        // 全到貨的排前面
+                        if (a.isFullyArrived && !b.isFullyArrived) return -1;
+                        if (!a.isFullyArrived && b.isFullyArrived) return 1;
+                        return 0;
+                    });
+                };
+
+                return {
+                    pendingArrivalCustomers: processMap(pendingMap, 'pending'),
+                    shippedArrivalCustomers: processMap(shippedMap, 'shipped')
+                };
+            }, [orders, products]); // 依賴 orders 和 products (取得名稱變體)
+
+            // 5. 搜尋與過濾
+            const purchaseList = useMemo(() => productsWithStats.filter(p => p.shortage > 0).map(p => ({ ...p })), [productsWithStats]);
+            
+            const revenueCustomers = useMemo(() => {
+                return customerList.filter(c => c.totalSpent > 0).sort((a, b) => b.totalSpent - a.totalSpent);
+            }, [customerList]);
+
+            const groupedProducts = useMemo(() => {
+                const groups = {};
+                productsWithStats.forEach(p => {
+                    if (!groups[p.name]) {
+                        groups[p.name] = { name: p.name, price: p.price, totalAllocated: 0, totalConfirmed: 0, totalSpot: 0, variants: [] };
+                    }
+                    groups[p.name].totalAllocated += p.allocated;
+                    groups[p.name].totalConfirmed += p.confirmed;
+                    groups[p.name].totalSpot += p.spot;
+                    groups[p.name].variants.push(p);
+                });
+                return Object.values(groups);
+            }, [productsWithStats]);
+
+            const filteredGroupedProducts = groupedProducts.filter(g => g.name.includes(searchQuery));
+            const filteredCustomers = customerList.filter(c => c.name.includes(searchQuery));
+            
+            // 搜尋過濾到貨管理
+            const filteredPendingArrivals = pendingArrivalCustomers.filter(c => c.name.includes(searchQuery));
+            const filteredShippedArrivals = shippedArrivalCustomers.filter(c => c.name.includes(searchQuery));
+            
+            const filteredOrders = orders.filter(o => o.customer.includes(searchQuery) || o.id.includes(searchQuery));
+            const unsettledOrders = filteredOrders.filter(o => o.status !== '待出貨' && o.status !== '已出貨');
+            const settledOrders = filteredOrders.filter(o => o.status === '待出貨');
+
+            const availableVariants = useMemo(() => {
+                if (!proxyForm.productName) return [];
+                return [...new Set(products.filter(p => p.name === proxyForm.productName).map(p => p.variant))];
+            }, [products, proxyForm.productName]);
+
+            // --- Handlers ---
+            const navigateTo = (tab) => { setActiveTab(tab); setSearchQuery(''); };
+            const handleProxyProductChange = (e) => {
+                const name = e.target.value;
+                const existing = products.find(p => p.name === name);
+                setProxyForm(prev => ({ ...prev, productName: name, price: existing ? existing.price : prev.price }));
+            };
+
+            const handleExportToCSV = () => {
+                let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+                csvContent += "顧客暱稱,商品名稱,款式,數量,單價,總價\n";
+                customerList.forEach(cust => {
+                    cust.items.forEach(item => {
+                        const row = [`"${cust.name}"`, `"${item.name}"`, `"${item.variant}"`, item.qty, item.finalPrice, item.qty * item.finalPrice].join(",");
+                        csvContent += row + "\n";
+                    });
+                });
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `團購訂單報表_${new Date().toISOString().slice(0,10)}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                notify("報表已匯出");
+            };
+
+            // 確認出貨功能
+            const handleShipCustomer = (customerName) => {
+                if(!window.confirm(`確認將 ${customerName} 的所有商品標記為「已出貨」嗎？`)) return;
+
+                setOrders(prev => prev.map(o => {
+                    // 只更新該顧客且尚未出貨的訂單
+                    if (o.customer === customerName && o.status !== '已出貨') {
+                        return { ...o, status: '已出貨' };
+                    }
+                    return o;
+                }));
+                
+                // 關閉視窗，讓使用者看到列表變動
+                setSelectedArrivalCustomer(null);
+                notify(`${customerName} 的訂單已移至出貨紀錄`);
+            };
+
+            // 取消出貨 (回復) 功能
+            const handleUnshipCustomer = (customerName) => {
+                if(!window.confirm(`確定要取消 ${customerName} 的出貨狀態，並回復為「待出貨」嗎？`)) return;
+
+                setOrders(prev => prev.map(o => {
+                    if (o.customer === customerName && o.status === '已出貨') {
+                        return { ...o, status: '待出貨' }; // 回復到待出貨狀態 (或之前的狀態，這裡簡化為待出貨)
+                    }
+                    return o;
+                }));
+                
+                setSelectedArrivalCustomer(null);
+                notify(`${customerName} 已回復為待出貨`);
+            };
 
             const handleUpdateOrderQty = (orderId, productId, newQtyStr) => {
                 const newQty = parseInt(newQtyStr, 10);
                 if (isNaN(newQty) || newQty < 0) return;
-
                 setOrders(prev => prev.map(o => {
                     if (o.id === orderId) {
-                        const newItems = o.items.map(item => {
-                            if (item.productId === productId) {
-                                return { ...item, qty: newQty };
-                            }
-                            return item;
-                        }).filter(item => item.qty > 0);
+                        const newItems = o.items.map(item => item.productId === productId ? { ...item, qty: newQty } : item).filter(item => item.qty > 0);
                         return { ...o, items: newItems };
                     }
                     return o;
@@ -193,127 +440,94 @@
                 notify("數量已更新");
             };
 
-            // 更新配貨數量 (含防呆機制)
             const handleUpdateAllocatedQty = (orderId, productId, newAllocatedQtyStr) => {
                 const newAllocated = parseInt(newAllocatedQtyStr, 10);
                 if (isNaN(newAllocated) || newAllocated < 0) return;
-
                 const order = orders.find(o => o.id === orderId);
                 const item = order?.items.find(i => i.productId === productId);
                 if (!item) return;
-
-                // 防呆：配貨量不可大於喊單量
-                if (newAllocated > item.qty) {
-                    notify(`配貨數量(${newAllocated})不可大於喊單數量(${item.qty})`);
-                    setEditingAllocatedQtyId(null);
-                    return;
-                }
-
+                if (newAllocated > item.qty) { notify(`不可大於喊單數量`); setEditingAllocatedQtyId(null); return; }
                 const diff = newAllocated - (item.allocatedQty || 0);
-
                 setOrders(prev => prev.map(o => {
                     if (o.id === orderId) {
-                        const newItems = o.items.map(i => {
-                            if (i.productId === productId) {
-                                return { ...i, allocatedQty: newAllocated };
-                            }
-                            return i;
-                        });
+                        const newItems = o.items.map(i => i.productId === productId ? { ...i, allocatedQty: newAllocated } : i);
                         return { ...o, items: newItems };
                     }
                     return o;
                 }));
-
                 setProducts(prev => prev.map(p => p.id === productId ? { ...p, spot: p.spot - diff } : p));
                 setEditingAllocatedQtyId(null);
             };
+            
+            const handleUpdatePurchaseQty = (productId, newShortageStr) => {
+                const newShortage = parseInt(newShortageStr, 10);
+                if (isNaN(newShortage) || newShortage < 0) return;
+                const product = productsWithStats.find(p => p.id === productId);
+                if (!product) return;
+                const newSpot = product.allocated - product.confirmed - newShortage;
+                setProducts(prev => prev.map(p => p.id === productId ? { ...p, spot: newSpot } : p));
+                setEditingPurchaseQtyId(null);
+                notify(`庫存已調整`);
+            };
 
             const handleDeleteOrderItem = (orderId, productId) => {
-                if(!confirm('確定要刪除這筆商品嗎？刪除後金額將重新計算。')) return;
-
+                if(!window.confirm('確定要刪除這筆商品嗎？')) return;
                 setOrders(prev => prev.map(o => {
                     if (o.id === orderId) {
                         const itemToRemove = o.items.find(i => i.productId === productId);
-                        if (!itemToRemove) return o; 
-
                         const newItems = o.items.filter(i => i.productId !== productId);
-                        
-                        if ((itemToRemove.allocatedQty || 0) > 0) {
-                            setProducts(currProducts => currProducts.map(p => {
-                                if (p.id === productId) {
-                                    return { ...p, spot: p.spot + itemToRemove.allocatedQty };
-                                }
-                                return p;
-                            }));
+                        if (itemToRemove && (itemToRemove.allocatedQty || 0) > 0) {
+                            setProducts(currProducts => currProducts.map(p => p.id === productId ? { ...p, spot: p.spot + itemToRemove.allocatedQty } : p));
                         }
-
                         return { ...o, items: newItems };
                     }
                     return o;
-                }).filter(o => o.items.length > 0)); 
-
-                notify("已刪除該筆商品");
+                }).filter(o => o.items.length > 0));
+                notify("已刪除商品");
             };
 
             const handleUpdateProductInfo = (productId, field, value) => {
                 const val = parseInt(value, 10);
                 if (isNaN(val)) return;
-
                 const targetProduct = products.find(p => p.id === productId);
                 const targetName = targetProduct ? targetProduct.name : '';
-
                 setProducts(prev => prev.map(p => {
-                    if ((field === 'tierMinQty' || field === 'tierPrice') && p.name === targetName) {
-                        return { ...p, [field]: val };
-                    }
-                    if (p.id === productId) {
-                        return { ...p, [field]: val };
-                    }
+                    if ((field === 'tierMinQty' || field === 'tierPrice') && p.name === targetName) return { ...p, [field]: val };
+                    if (p.id === productId) return { ...p, [field]: val };
                     return p;
                 }));
             };
 
             const handleDeleteProductGroup = (groupName, e) => {
                 e.stopPropagation();
-                if (confirm(`⚠️ 刪除警告\n\n確定要刪除商品「${groupName}」及其所有款式嗎？\n此動作無法復原。`)) {
+                if (window.confirm(`確定要刪除商品「${groupName}」嗎？`)) {
                     setProducts(prev => prev.filter(p => p.name !== groupName));
-                    if (selectedGroupName === groupName) {
-                        setSelectedGroupName(null);
-                    }
-                    notify(`已刪除商品：${groupName}`);
+                    if (selectedGroupName === groupName) setSelectedGroupName(null);
+                    notify(`已刪除商品`);
                 }
             };
-
+            
             const handleDeleteProduct = (productId) => {
-                if(confirm('確定要刪除此款式嗎？')) {
+                if(window.confirm('確定要刪除此款式嗎？')) {
                     setProducts(prev => prev.filter(p => p.id !== productId));
-                    notify("已刪除商品款式");
+                    notify("已刪除款式");
                 }
             };
 
             const handleDeleteCustomer = (customerName, e) => {
                 e.stopPropagation();
-                if (confirm(`⚠️ 刪除警告\n\n確定要刪除顧客「${customerName}」的所有資料嗎？\n這將會刪除該顧客的所有訂單紀錄。`)) {
+                if (window.confirm(`確定要刪除顧客「${customerName}」的資料嗎？`)) {
                     setOrders(prev => prev.filter(o => o.customer !== customerName));
-                    if (selectedCustomerDetail?.name === customerName) {
-                        setSelectedCustomerDetail(null);
-                    }
-                    notify(`已刪除顧客：${customerName}`);
+                    if (selectedCustomerDetail?.name === customerName) setSelectedCustomerDetail(null);
+                    notify(`已刪除顧客`);
                 }
             };
 
-            // 切換配貨狀態 (一鍵全到 / 一鍵取消)
             const toggleAllocation = (orderId, productId, currentAllocated, totalQty) => {
                 const newAllocated = currentAllocated >= totalQty ? 0 : totalQty;
                 const diff = newAllocated - currentAllocated;
-
                 const product = products.find(p => p.id === productId);
-                
-                // 檢查庫存 (僅在增加配貨時提示)
-                if (diff > 0 && product && product.spot < diff) {
-                    notify("⚠️ 注意：現貨不足，庫存將變為負數");
-                }
-
+                if (diff > 0 && product && product.spot < diff) notify("⚠️ 現貨不足，庫存將變負");
                 setOrders(prev => prev.map(o => {
                     if (o.id === orderId) {
                         const newItems = o.items.map(item => item.productId === productId ? { ...item, allocatedQty: newAllocated } : item);
@@ -321,40 +535,13 @@
                     }
                     return o;
                 }));
-
                 setProducts(prev => prev.map(p => p.id === productId ? { ...p, spot: p.spot - diff } : p));
             };
-
-            const navigateTo = (tab) => {
-                setActiveTab(tab);
-                setSearchQuery('');
-            };
-
-            const handleProxyProductChange = (e) => {
-                const name = e.target.value;
-                const existing = products.find(p => p.name === name);
-                setProxyForm(prev => ({
-                    ...prev,
-                    productName: name,
-                    price: existing ? existing.price : prev.price
-                }));
-            };
-
-            const availableVariants = useMemo(() => {
-                if (!proxyForm.productName) return [];
-                return [...new Set(products
-                    .filter(p => p.name === proxyForm.productName)
-                    .map(p => p.variant))];
-            }, [products, proxyForm.productName]);
 
             const handleAddOrder = () => {
                 const { productName, variant, price, customer, qty, purchasedQty } = proxyForm;
                 const finalVariant = variant || '單一款式';
-
-                if (!productName || !price) {
-                    notify('商品名稱與價格為必填');
-                    return;
-                }
+                if (!productName || !price) { notify('請填寫完整資訊'); return; }
 
                 const quantity = parseInt(qty, 10) || 1;
                 const purchasedQuantity = parseInt(purchasedQty, 10) || 0;
@@ -367,51 +554,30 @@
                 if (!targetProduct) {
                     isNewProduct = true;
                     targetId = `N${Math.floor(Math.random() * 10000)}`;
-                    targetProduct = {
-                        id: targetId,
-                        name: productName,
-                        variant: finalVariant,
-                        price: finalPrice,
-                        spot: 0,
-                        tierMinQty: 0,
-                        tierPrice: 0
-                    };
+                    targetProduct = { id: targetId, name: productName, variant: finalVariant, price: finalPrice, spot: 0, tierMinQty: 0, tierPrice: 0 };
                 }
 
                 setProducts(prev => {
-                    if (isNewProduct) {
-                        return [{ ...targetProduct, spot: purchasedQuantity }, ...prev];
-                    } else {
-                        return prev.map(p => 
-                            p.id === targetId ? { ...p, spot: p.spot + purchasedQuantity } : p
-                        );
-                    }
+                    if (isNewProduct) return [{ ...targetProduct, spot: purchasedQuantity }, ...prev];
+                    else return prev.map(p => p.id === targetId ? { ...p, spot: p.spot + purchasedQuantity } : p);
                 });
 
                 if (customer) {
                     const newOrder = {
                         id: `ORD${Math.floor(Math.random() * 10000)}`,
                         customer: customer,
-                        total: finalPrice * quantity, 
+                        total: finalPrice * quantity,
                         paid: 0,
                         status: '待結單',
-                        items: [{ 
-                            productId: targetId, 
-                            name: productName, 
-                            variant: finalVariant, 
-                            qty: quantity, 
-                            price: finalPrice, 
-                            allocatedQty: 0 
-                        }],
-                        debt: 0, 
+                        items: [{ productId: targetId, name: productName, variant: finalVariant, qty: quantity, price: finalPrice, allocatedQty: 0 }],
+                        debt: 0,
                         unclaimed: 0
                     };
                     setOrders(prev => [newOrder, ...prev]);
-                    notify(`加單成功 (待排)：${productName}`);
+                    notify(`加單成功`);
                 } else {
-                    notify(`已入庫：${productName} x${purchasedQuantity}`);
+                    notify(`已入庫`);
                 }
-                
                 setShowProxyOrder(false);
                 setProxyForm({ productName: '', variant: '', price: '', customer: '', qty: 1, purchasedQty: 0 });
             };
@@ -458,37 +624,18 @@
                     const priceDisplay = item.isDiscounted ? `$${item.finalPrice} (優惠)` : `$${item.finalPrice}`;
                     itemsText += `- ${item.name} ${item.variant !== '單一款式' && item.variant ? `(${item.variant})` : ''} x${item.qty} ${priceDisplay}\n`;
                 });
-
-                const text = `親愛的 ${customer.name} 您好，
-您本次的連線購物明細如下：
-${itemsText}----------------
-消費總額：$${customer.totalSpent.toLocaleString()}
-
-可以先幫我搭波卻可
-有誤的話～請趕快跟我說！
-₊⊹ 若是沒有漏掉的商品 ₊⊹
-就可以直接結帳囉！
-網址：（這裡留給我自己輸入網址）
-找到自己名字後完成下單就可以嚕
-𐙚 收到所有連結後請盡速完成付款
-   不要耽誤到最佳的賞味期限唷
-
-⚝ p.s. 前一次連線有開箱分享的朋友~
-下單後請幫我備註一下：開箱禮
-𝐭𝐡𝐚𝐧𝐤 𝐲𝐨𝐮 („• ֊ •„)੭`;
-
+                const text = `親愛的 ${customer.name} 您好，\n您本次的連線購物明細如下：\n${itemsText}----------------\n消費總額：$${customer.totalSpent.toLocaleString()}\n\n可以先幫我搭波卻可\n有誤的話～請趕快跟我說！\n₊⊹ 若是沒有漏掉的商品 ₊⊹\n就可以直接結帳囉！\n網址：（這裡留給我自己輸入網址）\n找到自己名字後完成下單就可以嚕\n𐙚 收到所有連結後請盡速完成付款\n   不要耽誤到最佳的賞味期限唷\n\n⚝ p.s. 前一次連線有開箱分享的朋友~\n下單後請幫我備註一下：開箱禮\n𝐭𝐡𝐚𝐧𝐤 𝐲𝐨𝐮 („• ֊ •„)੭`;
                 const textArea = document.createElement("textarea");
                 textArea.value = text;
                 document.body.appendChild(textArea);
                 textArea.select();
-                try {
-                    document.execCommand('copy');
-                    notify("已複製通知文案！");
-                } catch (err) {
-                    console.error('複製失敗', err);
-                    notify("複製失敗，請手動複製");
-                }
+                try { document.execCommand('copy'); notify("已複製通知文案！"); } catch (err) { notify("複製失敗"); }
                 document.body.removeChild(textArea);
+            };
+
+            const handleCheckout = (orderId) => {
+                setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: '待出貨', paid: o.total, debt: 0 } : o));
+                notify("結單成功");
             };
 
             const getGroupAllocations = (groupName) => {
@@ -514,158 +661,22 @@ ${itemsText}----------------
                 return result;
             };
 
-            // 2. 顧客清單 (Customer List)
-            const customerList = useMemo(() => {
-                const map = {};
-                
-                orders.forEach(o => {
-                    if (!map[o.customer]) {
-                        map[o.customer] = { 
-                            name: o.customer, 
-                            totalSpent: 0, 
-                            totalPaid: 0,
-                            orderCount: 0, 
-                            debt: 0, 
-                            items: [],
-                            rawItems: []
-                        };
-                    }
-                    map[o.customer].totalPaid += o.paid;
-                    map[o.customer].orderCount += 1;
-                    
-                    o.items.forEach(item => {
-                        map[o.customer].rawItems.push({
-                            ...item,
-                            orderId: o.id
-                        });
-                    });
-                });
-
-                Object.values(map).forEach(cust => {
-                    const nameCounts = {};
-                    cust.rawItems.forEach(item => {
-                        const productInfo = products.find(p => p.id === item.productId);
-                        const productName = productInfo ? productInfo.name : item.name;
-                        
-                        if (!nameCounts[productName]) {
-                            nameCounts[productName] = 0;
-                        }
-                        nameCounts[productName] += item.qty;
-                    });
-
-                    cust.rawItems.forEach(item => {
-                        const productInfo = products.find(p => p.id === item.productId);
-                        
-                        let finalPrice = item.price;
-                        let originalPrice = item.price;
-                        let tierMinQty = 0;
-                        let tierPrice = 0;
-
-                        if (productInfo) {
-                            originalPrice = productInfo.price;
-                            tierMinQty = productInfo.tierMinQty;
-                            tierPrice = productInfo.tierPrice;
-                            
-                            const pName = productInfo.name;
-                            if (tierMinQty > 0 && nameCounts[pName] >= tierMinQty) {
-                                finalPrice = tierPrice;
-                            }
-                        }
-
-                        const itemTotal = item.qty * finalPrice;
-                        
-                        cust.items.push({
-                            ...item,
-                            finalPrice: finalPrice, 
-                            isDiscounted: finalPrice < originalPrice, 
-                            itemTotal: itemTotal,
-                            isAllocated: (item.allocatedQty || 0) >= item.qty
-                        });
-                        cust.totalSpent += itemTotal;
-                    });
-
-                    cust.debt = Math.max(0, cust.totalSpent - cust.totalPaid);
-                });
-
-                return Object.values(map);
-            }, [orders, products]);
-
-            const stats = useMemo(() => {
-                const totalDebt = customerList.reduce((acc, curr) => acc + curr.debt, 0);
-                const totalRevenue = customerList.reduce((acc, curr) => acc + curr.totalSpent, 0); 
-
-                let shortageItemCount = 0; 
-                let totalShortageQty = 0;  
-
-                productsWithStats.forEach(p => {
-                    if (p.shortage > 0) {
-                        shortageItemCount += 1;
-                        totalShortageQty += p.shortage;
-                    }
-                });
-
-                return {
-                    totalDebt,
-                    totalRevenue, 
-                    shortageItemCount,
-                    totalShortageQty,
-                    pendingShipment: orders.filter(o => o.status === '待出貨').length
-                };
-            }, [orders, productsWithStats, customerList]); 
-
-            const purchaseList = useMemo(() => {
-                return productsWithStats
-                    .filter(p => p.shortage > 0)
-                    .map(p => ({ ...p }));
-            }, [productsWithStats]);
-
-            const groupedProducts = useMemo(() => {
-                const groups = {};
-                productsWithStats.forEach(p => {
-                    if (!groups[p.name]) {
-                        groups[p.name] = { name: p.name, price: p.price, totalAllocated: 0, totalConfirmed: 0, totalSpot: 0, variants: [] };
-                    }
-                    groups[p.name].totalAllocated += p.allocated;
-                    groups[p.name].totalConfirmed += p.confirmed;
-                    groups[p.name].totalSpot += p.spot;
-                    groups[p.name].variants.push(p);
-                });
-                return Object.values(groups);
-            }, [productsWithStats]);
-
-            const debtCustomers = useMemo(() => {
-                return customerList.filter(c => c.totalSpent > 0).sort((a, b) => b.totalSpent - a.totalSpent);
-            }, [customerList]);
-
-            // --- 到貨管理 (Arrival Management) 資料處理 ---
-            const arrivalCustomers = useMemo(() => {
-                return customerList.map(cust => {
-                    const totalItemsCount = cust.items.length; 
-                    const arrivedItemsCount = cust.items.filter(i => (i.allocatedQty || 0) >= i.qty).length; 
-                    
-                    const totalQty = cust.items.reduce((sum, i) => sum + i.qty, 0); 
-                    const allocatedQty = cust.items.reduce((sum, i) => sum + (i.allocatedQty || 0), 0);
-
-                    const isFullyArrived = totalItemsCount > 0 && totalItemsCount === arrivedItemsCount;
-                    
-                    return { ...cust, totalItemsCount, arrivedItemsCount, totalQty, allocatedQty, isFullyArrived };
-                }).sort((a, b) => {
-                    if (a.isFullyArrived && !b.isFullyArrived) return -1;
-                    if (!a.isFullyArrived && b.isFullyArrived) return 1;
-                    return 0;
-                });
-            }, [customerList]);
-
-            const filteredGroupedProducts = groupedProducts.filter(g => g.name.includes(searchQuery));
-            const filteredCustomers = customerList.filter(c => c.name.includes(searchQuery));
-            const filteredArrivalCustomers = arrivalCustomers.filter(c => c.name.includes(searchQuery));
-
+            // 確保選中物件更新 (使用 useMemo 中的 arrivalCustomers 來查找，確保 source 正確)
             const currentSelectedCustomer = selectedCustomerDetail 
                 ? customerList.find(c => c.name === selectedCustomerDetail.name) || selectedCustomerDetail
                 : null;
             
+            // 修正：在渲染時動態查找對應清單中的顧客物件
+            // 這解決了「點擊沒反應」或「資料不更新」的問題
             const currentSelectedArrivalCustomer = selectedArrivalCustomer
-                ? arrivalCustomers.find(c => c.name === selectedArrivalCustomer.name) || selectedArrivalCustomer
+                ? (
+                    // 先看能不能在待出貨找到
+                    pendingArrivalCustomers.find(c => c.name === selectedArrivalCustomer.name) ||
+                    // 再看能不能在已出貨找到
+                    shippedArrivalCustomers.find(c => c.name === selectedArrivalCustomer.name) ||
+                    // 若都找不到 (可能剛好狀態切換)，回傳原本的，避免崩潰
+                    selectedArrivalCustomer
+                  )
                 : null;
 
             return (
@@ -800,20 +811,14 @@ ${itemsText}----------------
                                         <div className="absolute -right-4 -bottom-4 bg-white/10 w-24 h-24 rounded-full blur-2xl"></div>
                                     </div>
                                     <div 
-                                        onClick={() => setShowDebtList(true)}
+                                        onClick={() => setShowRevenueList(true)}
                                         className="bg-amber-500 text-white p-4 rounded-3xl shadow-lg shadow-amber-100 cursor-pointer active:scale-95 transition-all relative overflow-hidden"
                                     >
                                         <div className="relative z-10">
-                                            <p className="text-[10px] font-bold opacity-80 mb-1">帳務情況 (點擊查看)</p>
+                                            <p className="text-[10px] font-bold opacity-80 mb-1">總營業額 (點擊查看)</p>
                                             <div className="space-y-1">
                                                 <div className="flex justify-between items-baseline">
-                                                    <span className="text-[10px] opacity-80">總營業額</span>
-                                                    <span className="text-lg font-bold">${stats.totalRevenue.toLocaleString()}</span>
-                                                </div>
-                                                <div className="w-full h-px bg-white/30 my-1"></div>
-                                                <div className="flex justify-between items-baseline"> 
-                                                    <span className="text-[10px] opacity-80">待收款項</span>
-                                                    <span className="text-xl font-black">${stats.totalDebt.toLocaleString()}</span>
+                                                    <span className="text-xl font-bold">${stats.totalRevenue.toLocaleString()}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -839,7 +844,6 @@ ${itemsText}----------------
                                             <div className="text-right">
                                                 <p className="text-lg font-black text-indigo-600">${cust.totalSpent.toLocaleString()}</p>
                                             </div>
-                                            {/* 顧客刪除按鈕 */}
                                             <button 
                                                 onClick={(e) => handleDeleteCustomer(cust.name, e)}
                                                 className="text-slate-300 hover:text-rose-500 p-3 -mr-2"
@@ -852,38 +856,60 @@ ${itemsText}----------------
                             </div>
                         )}
 
-                        {/* View 4: 到貨管理 (Arrival Management) */}
+                        {/* View 4: 到貨管理 (分流為 待出貨 / 已出貨) */}
                         {activeTab === 'arrivals' && (
-                            <div className="space-y-4 pb-24">
-                                {filteredArrivalCustomers.length === 0 ? (
-                                    <div className="text-center p-10 text-slate-400">目前沒有訂單資料</div>
-                                ) : (
-                                    filteredArrivalCustomers.map((cust, idx) => {
-                                        const progress = cust.totalQty > 0 ? (cust.allocatedQty / cust.totalQty) * 100 : 0;
-                                        
-                                        return (
-                                            <div key={idx} onClick={() => setSelectedArrivalCustomer(cust)} className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden cursor-pointer active:scale-98">
-                                                <div className="p-4 flex justify-between items-center">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${cust.isFullyArrived ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
-                                                            {cust.name.charAt(0)}
-                                                        </div>
-                                                        <div>
-                                                            <h4 className="font-black text-lg text-slate-800 flex items-center gap-2">
-                                                                {cust.name}
-                                                                {cust.isFullyArrived && <span className="text-[10px] bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full font-bold">全到貨</span>}
-                                                            </h4>
-                                                            <div className="text-[10px] text-slate-500 font-bold mt-1 flex flex-col">
-                                                                <span>共 {cust.totalQty} 件商品 · 已到 {cust.allocatedQty} 件</span>
-                                                                <span className="text-slate-400">共 {cust.totalItemsCount} 項 · 已到 {cust.arrivedItemsCount} 項</span>
+                            <div className="space-y-6 pb-24">
+                                
+                                {/* 區塊一：待出貨 / 到貨中 */}
+                                <div>
+                                    <div className="flex items-center gap-2 mb-3 px-2">
+                                        <Package size={20} className="text-indigo-600" />
+                                        <h3 className="text-lg font-black text-slate-800">📦 待出貨 / 到貨中</h3>
+                                    </div>
+                                    <div className="space-y-4">
+                                        {filteredPendingArrivals.length === 0 ? (
+                                            <div className="text-center p-8 bg-white rounded-3xl border border-dashed border-slate-200 text-slate-400 text-sm">
+                                                目前沒有待處理訂單
+                                            </div>
+                                        ) : (
+                                            filteredPendingArrivals.map((cust, idx) => {
+                                                const progress = cust.totalQty > 0 ? (cust.allocatedQty / cust.totalQty) * 100 : 0;
+                                                
+                                                return (
+                                                    <div key={idx} onClick={() => setSelectedArrivalCustomer(cust)} className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden cursor-pointer active:scale-98 relative">
+                                                        {/* 確認出貨按鈕 (僅全到貨時顯示) */}
+                                                        {cust.isFullyArrived && (
+                                                            <button 
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleShipCustomer(cust.name);
+                                                                }}
+                                                                className="absolute right-3 bottom-3 bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-lg shadow-emerald-200 z-10 flex items-center gap-1 active:scale-95 transition-all animate-bounce"
+                                                            >
+                                                                <Truck size={14} /> 確認出貨
+                                                            </button>
+                                                        )}
+
+                                                        <div className="p-4 flex justify-between items-center">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${cust.isFullyArrived ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+                                                                    {cust.name.charAt(0)}
+                                                                </div>
+                                                                <div>
+                                                                    <h4 className="font-black text-lg text-slate-800 flex items-center gap-2">
+                                                                        {cust.name}
+                                                                        {cust.isFullyArrived && <span className="text-[10px] bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full font-bold">全到貨</span>}
+                                                                    </h4>
+                                                                    <div className="text-[10px] text-slate-500 font-bold mt-1 flex flex-col">
+                                                                        <span>共 {cust.totalQty} 件商品 · 已配 {cust.allocatedQty} 件</span>
+                                                                        <span className="text-slate-400">共 {cust.totalItemsCount} 項 · 已到 {cust.arrivedItemsCount} 項</span>
+                                                                    </div>
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <ChevronRight className="text-slate-300" size={20} />
-                                                    </div>
+                                                            <div className="text-right">
+                                                                <ChevronRight className="text-slate-300" size={20} />
+                                                            </div>
                                                 </div>
-                                                {/* 進度條 */}
                                                 <div className="h-1.5 w-full bg-slate-50">
                                                     <div 
                                                         className={`h-full transition-all duration-500 ${cust.isFullyArrived ? 'bg-emerald-500' : 'bg-indigo-500'}`} 
@@ -891,9 +917,40 @@ ${itemsText}----------------
                                                     ></div>
                                                 </div>
                                             </div>
-                                        );
-                                    })
-                                )}
+                                            );
+                                        })
+                                    )}
+                                    </div>
+                                </div>
+
+                                {/* 區塊二：已出貨紀錄 */}
+                                <div>
+                                    <div className="flex items-center gap-2 mb-3 px-2 mt-6 opacity-60">
+                                        <PackageCheck size={20} className="text-slate-500" />
+                                        <h3 className="text-lg font-black text-slate-500">✅ 已出貨紀錄</h3>
+                                    </div>
+                                    <div className="space-y-4 opacity-70">
+                                        {filteredShippedArrivals.length === 0 ? (
+                                            <div className="text-center p-4 text-slate-300 text-xs">尚無出貨紀錄</div>
+                                        ) : (
+                                            filteredShippedArrivals.map((cust, idx) => (
+                                                <div key={idx} onClick={() => setSelectedArrivalCustomer(cust)} className="bg-slate-50 rounded-3xl p-4 border border-slate-100 cursor-pointer flex justify-between items-center">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center font-bold text-sm text-gray-500">
+                                                            {cust.name.charAt(0)}
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="font-bold text-slate-600">{cust.name}</h4>
+                                                            <p className="text-[10px] text-slate-400">共 {cust.totalQty} 件商品</p>
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-xs bg-gray-200 text-gray-500 px-2 py-1 rounded-full font-bold">已出貨</span>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+
                             </div>
                         )}
                     </main>
@@ -915,80 +972,117 @@ ${itemsText}----------------
                         </button>
                     </div>
 
-                    {/* Modal: 到貨檢核 (Arrival Check) - 修改為編輯到貨數量 */}
+                    {/* Modal: 到貨檢核 (Arrival Check) */}
                     {selectedArrivalCustomer && currentSelectedArrivalCustomer && (
                          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[150] p-0 md:p-4 animate-in">
                             <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[85vh] flex flex-col">
                                 <div className="p-6 bg-slate-800 text-white shrink-0 relative rounded-t-[30px]">
-                                    <button onClick={() => setSelectedArrivalCustomer(null)} className="absolute right-4 top-4 bg-white/10 p-2 rounded-full"><X size={18}/></button>
-                                    <h3 className="text-xl font-black">{currentSelectedArrivalCustomer.name}</h3>
-                                    <p className="text-slate-400 text-xs font-bold mt-1">到貨檢核清單 (勾選即配貨扣庫存)</p>
-                                    
-                                    <div className="mt-4 bg-white/10 rounded-xl p-3 flex justify-between items-center">
-                                        <div className="text-xs text-slate-300">配貨進度 (項)</div>
-                                        <div className="font-bold text-white">
-                                            {currentSelectedArrivalCustomer.arrivedItemsCount} / {currentSelectedArrivalCustomer.totalItemsCount}
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h3 className="text-xl font-black">{currentSelectedArrivalCustomer.name}</h3>
+                                            <p className="text-slate-400 text-xs font-bold mt-1">
+                                                {currentSelectedArrivalCustomer.source === 'shipped' ? '已出貨訂單明細' : '到貨檢核清單 (勾選即配貨)'}
+                                            </p>
                                         </div>
+                                        <button onClick={() => setSelectedArrivalCustomer(null)} className="bg-white/10 p-2 rounded-full text-white"><X size={18}/></button>
+                                    </div>
+                                    
+                                    {/* 狀態列與操作 */}
+                                    <div className="mt-4 flex gap-2">
+                                        <div className="flex-1 bg-white/10 rounded-xl p-3 flex justify-between items-center">
+                                            <div className="text-xs text-slate-300">配貨進度</div>
+                                            <div className="font-bold text-white">
+                                                {currentSelectedArrivalCustomer.arrivedItemsCount} / {currentSelectedArrivalCustomer.totalItemsCount}
+                                            </div>
+                                        </div>
+                                        {/* 取消出貨/回復按鈕 */}
+                                        {currentSelectedArrivalCustomer.source === 'shipped' && (
+                                            <button 
+                                                onClick={() => handleUnshipCustomer(currentSelectedArrivalCustomer.name)}
+                                                className="bg-amber-500 text-white px-3 rounded-xl font-bold text-xs flex items-center gap-1 shadow-lg"
+                                            >
+                                                <Undo2 size={14} /> 回復未出貨
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
 
                                 <div className="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar pb-20">
                                     {currentSelectedArrivalCustomer.items.map((item, idx) => {
                                         const isFullyArrivedItem = (item.allocatedQty || 0) >= item.qty;
+                                        // 檢查是否已出貨狀態 (禁止編輯)
+                                        const isShipped = currentSelectedArrivalCustomer.source === 'shipped';
+
                                         return (
                                             <div 
                                                 key={idx} 
-                                                className={`flex justify-between items-center p-3 border rounded-2xl shadow-sm transition-all ${isFullyArrivedItem ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-100'}`}
+                                                className={`flex justify-between items-center p-3 border rounded-2xl shadow-sm transition-all ${isShipped ? 'bg-gray-100 border-gray-200 opacity-70' : isFullyArrivedItem ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-100'}`}
                                             >
                                                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                                                    {/* 全到貨一鍵按鈕 */}
-                                                    <div 
-                                                        className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all shrink-0 cursor-pointer ${isFullyArrivedItem ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-slate-300 text-transparent'}`}
-                                                        onClick={() => toggleAllocation(item.orderId, item.productId, item.allocatedQty || 0, item.qty)}
-                                                    >
-                                                        <CheckSquare size={14} />
-                                                    </div>
+                                                    {/* 全到貨一鍵按鈕 (已出貨則隱藏或不可點) */}
+                                                    {!isShipped && (
+                                                        <div 
+                                                            className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all shrink-0 cursor-pointer ${isFullyArrivedItem ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-slate-300 text-transparent'}`}
+                                                            onClick={() => toggleAllocation(item.orderId, item.productId, item.allocatedQty || 0, item.qty)}
+                                                        >
+                                                            <CheckSquare size={14} />
+                                                        </div>
+                                                    )}
+                                                    {isShipped && (
+                                                        <div className="w-6 h-6 rounded-lg flex items-center justify-center bg-gray-300 text-white shrink-0">
+                                                            <PackageCheck size={14} />
+                                                        </div>
+                                                    )}
+
                                                     <div className="min-w-0">
                                                         <div className="flex items-center gap-2 flex-wrap">
                                                             <span className="font-bold text-slate-700 text-sm">{item.name}</span>
                                                             <span className="text-[10px] bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded whitespace-nowrap">{item.variant}</span>
                                                         </div>
-                                                        <span className={`text-[10px] font-bold ${isFullyArrivedItem ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                                            {isFullyArrivedItem ? '已全到' : '未全到'}
+                                                        <span className={`text-[10px] font-bold ${isShipped ? 'text-gray-500' : isFullyArrivedItem ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                                            {isShipped ? '已出貨' : isFullyArrivedItem ? '已配貨' : '待排單'}
                                                         </span>
                                                     </div>
                                                 </div>
 
-                                                {/* 到貨數量編輯區塊 */}
-                                                <div className="flex items-center gap-2 pl-2">
-                                                    <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm">
-                                                        <span className="text-xs text-slate-400 font-bold">到:</span>
-                                                        {editingAllocatedQtyId === `${item.orderId}-${item.productId}` ? (
-                                                            <input 
-                                                                autoFocus
-                                                                type="number"
-                                                                className="w-10 text-center font-black text-lg p-0 outline-none border-b-2 border-indigo-500 text-indigo-600"
-                                                                defaultValue={item.allocatedQty || 0}
-                                                                onBlur={(e) => handleUpdateAllocatedQty(item.orderId, item.productId, e.target.value)}
-                                                                onKeyDown={(e) => {
-                                                                    if (e.key === 'Enter') handleUpdateAllocatedQty(item.orderId, item.productId, e.target.value);
-                                                                }}
-                                                                onClick={(e) => e.stopPropagation()} 
-                                                            />
-                                                        ) : (
-                                                            <span 
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setEditingAllocatedQtyId(`${item.orderId}-${item.productId}`);
-                                                                }}
-                                                                className={`font-black text-lg cursor-pointer border-b-2 border-transparent hover:border-indigo-300 ${isFullyArrivedItem ? 'text-emerald-600' : 'text-indigo-600'}`}
-                                                            >
-                                                                {item.allocatedQty || 0}
-                                                            </span>
-                                                        )}
+                                                {/* 到貨數量編輯區塊 (已出貨不可編輯) */}
+                                                {!isShipped && (
+                                                    <div className="flex items-center gap-2 pl-2">
+                                                        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm">
+                                                            <span className="text-xs text-slate-400 font-bold">配:</span>
+                                                            {editingAllocatedQtyId === `${item.orderId}-${item.productId}` ? (
+                                                                <input 
+                                                                    autoFocus
+                                                                    type="number"
+                                                                    className="w-10 text-center font-black text-lg p-0 outline-none border-b-2 border-indigo-500 text-indigo-600"
+                                                                    defaultValue={item.allocatedQty || 0}
+                                                                    onBlur={(e) => handleUpdateAllocatedQty(item.orderId, item.productId, e.target.value)}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') handleUpdateAllocatedQty(item.orderId, item.productId, e.target.value);
+                                                                    }}
+                                                                    onClick={(e) => e.stopPropagation()} 
+                                                                />
+                                                            ) : (
+                                                                <span 
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setEditingAllocatedQtyId(`${item.orderId}-${item.productId}`);
+                                                                    }}
+                                                                    className={`font-black text-lg cursor-pointer border-b-2 border-transparent hover:border-indigo-300 ${isFullyArrivedItem ? 'text-emerald-600' : 'text-indigo-600'}`}
+                                                                >
+                                                                    {item.allocatedQty || 0}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <span className="text-xs text-slate-400 font-bold">/ 訂: {item.qty}</span>
                                                     </div>
-                                                    <span className="text-xs text-slate-400 font-bold">/ 訂: {item.qty}</span>
-                                                </div>
+                                                )}
+                                                
+                                                {isShipped && (
+                                                     <div className="flex items-center gap-2 pl-2">
+                                                         <span className="font-bold text-gray-500">{item.allocatedQty} / {item.qty}</span>
+                                                     </div>
+                                                )}
                                             </div>
                                         );
                                     })}
@@ -997,7 +1091,7 @@ ${itemsText}----------------
                         </div>
                     )}
 
-                    {/* Modal: 代客加單 (z-index 200) */}
+                    {/* Modal: 代客加單 */}
                     {showProxyOrder && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[200] p-0 md:p-4 animate-in">
                             <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl flex flex-col max-h-[90vh] md:max-h-[80vh]">
@@ -1009,7 +1103,6 @@ ${itemsText}----------------
                                     <button onClick={() => setShowProxyOrder(false)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:text-slate-700 active:scale-95"><X size={20} /></button>
                                 </div>
                                 <div className="p-5 space-y-4 overflow-y-auto no-scrollbar">
-                                    {/* ... forms ... */}
                                     <datalist id="productSuggestions">
                                         {[...new Set(products.map(p => p.name))].map(name => <option key={name} value={name} />)}
                                     </datalist>
@@ -1058,27 +1151,31 @@ ${itemsText}----------------
                             </div>
                         </div>
                     )}
-
-                    {/* Modal: 欠款清單 (改為顧客消費總覽) */}
-                    {showDebtList && (
+                    
+                    {/* Modal: 營收清單 */}
+                    {showRevenueList && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[150] p-0 md:p-4 animate-in">
                             <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[85vh] flex flex-col">
                                 <div className="bg-amber-500 text-white p-6 relative overflow-hidden rounded-t-[30px] shrink-0">
                                     <h3 className="text-2xl font-black relative z-10">顧客消費總覽</h3>
                                     <p className="text-amber-100 text-xs font-bold relative z-10">依消費總額排序</p>
-                                    <button onClick={() => setShowDebtList(false)} className="absolute top-4 right-4 bg-white/10 p-2 rounded-full hover:bg-white/20"><X size={20}/></button>
+                                    <button onClick={() => setShowRevenueList(false)} className="absolute top-4 right-4 bg-white/10 p-2 rounded-full hover:bg-white/20"><X size={20}/></button>
                                 </div>
                                 <div className="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar pb-20">
-                                    {debtCustomers.length === 0 ? (
+                                    {revenueCustomers.length === 0 ? (
                                         <div className="text-center p-8 text-slate-400 text-sm">暫無顧客消費資料</div>
                                     ) : (
-                                        debtCustomers.map((c, idx) => (
-                                            <div key={idx} onClick={() => { setShowDebtList(false); setSelectedCustomerDetail(c); }} className="bg-white rounded-2xl p-4 border border-slate-100 flex justify-between items-center shadow-sm cursor-pointer active:scale-98">
+                                        revenueCustomers.map((c, idx) => (
+                                            <div key={idx} onClick={() => { setShowRevenueList(false); setSelectedCustomerDetail(c); }} className="bg-white rounded-2xl p-4 border border-slate-100 flex justify-between items-center shadow-sm cursor-pointer active:scale-98">
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center font-bold text-sm">{c.name.charAt(0)}</div>
                                                     <div>
                                                         <span className="font-bold text-slate-800 block">{c.name}</span>
-                                                        <span className="text-[10px] text-slate-400">欠款: ${c.debt.toLocaleString()}</span>
+                                                        {c.debt > 0 ? (
+                                                            <span className="text-[10px] text-rose-500 font-bold">欠款: ${c.debt.toLocaleString()}</span>
+                                                        ) : (
+                                                            <span className="text-[10px] text-emerald-500 font-bold">已結清</span>
+                                                        )}
                                                     </div>
                                                 </div>
                                                 <span className="font-black text-slate-700 text-lg">${c.totalSpent.toLocaleString()}</span>
@@ -1089,8 +1186,8 @@ ${itemsText}----------------
                             </div>
                         </div>
                     )}
-
-                    {/* Modal: 商品詳情 (編輯模式 & 配單) */}
+                    
+                    {/* Modal: 商品詳情 ... */}
                     {selectedGroupName && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[150] p-0 md:p-4 animate-in">
                             <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[85vh] flex flex-col">
@@ -1395,7 +1492,7 @@ ${itemsText}----------------
                         </div>
                     )}
 
-                    {/* Modal: 廠商採購單 */}
+                    {/* Modal: 廠商採購單 (顯示精準缺貨數字) */}
                     {showPurchaseList && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[150] p-0 md:p-4 animate-in">
                             <div className="bg-white rounded-t-[30px] md:rounded-[30px] w-full max-w-md shadow-2xl h-[85vh] flex flex-col">
@@ -1420,9 +1517,29 @@ ${itemsText}----------------
                                                 </div>
                                                 <div className="text-right">
                                                     <p className="text-xs text-slate-400 font-bold mb-1">缺</p>
-                                                    <div className="bg-rose-50 text-rose-600 px-3 py-1 rounded-lg font-black text-lg">
-                                                        {p.shortage}
-                                                    </div>
+                                                    {editingPurchaseQtyId === p.id ? (
+                                                        <input 
+                                                            autoFocus
+                                                            type="number"
+                                                            className="w-16 bg-white border-b-2 border-rose-500 text-center font-black text-lg p-0 outline-none text-rose-600"
+                                                            defaultValue={p.shortage}
+                                                            onBlur={(e) => handleUpdatePurchaseQty(p.id, e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') handleUpdatePurchaseQty(p.id, e.target.value);
+                                                            }}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        />
+                                                    ) : (
+                                                        <div 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setEditingPurchaseQtyId(p.id);
+                                                            }}
+                                                            className="bg-rose-50 text-rose-600 px-3 py-1 rounded-lg font-black text-lg cursor-pointer border border-transparent hover:border-rose-200"
+                                                        >
+                                                            {p.shortage}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))
