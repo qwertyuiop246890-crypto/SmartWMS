@@ -351,12 +351,10 @@
             
             // --- 優化後的款式建議邏輯 (Smart Variants) ---
             const availableVariants = useMemo(() => {
-                // 1. 如果有完全匹配的商品名稱，只顯示該商品的款式
                 const exactMatch = products.filter(p => p.name === proxyForm.productName);
                 if (exactMatch.length > 0) {
                     return [...new Set(exactMatch.map(p => p.variant))];
                 }
-                // 2. 如果沒有(是新商品或正在輸入)，顯示所有歷史款式供選擇
                 return [...new Set(products.map(p => p.variant))];
             }, [products, proxyForm.productName]);
 
@@ -407,6 +405,46 @@
                 } catch (err) { console.error(err); notify("匯出失敗"); } finally { setExportTargetCustomer(null); }
             };
 
+            // 複製訂單文案函式
+            const handleCopyOrderText = (customer) => {
+                if (!customer) return;
+                let text = `親愛的 ${customer.name} 您好，\n`;
+                text += `您本次的連線購物明細如下：\n\n`;
+                
+                customer.items.forEach(item => {
+                    text += `${item.name} ${item.variant !== '單一款式' ? `(${item.variant})` : ''} x ${item.qty} $${item.itemTotal}\n`;
+                });
+                
+                text += `----------------\n`;
+                text += `消費總額：$${customer.totalSpent.toLocaleString()}\n\n`;
+                
+                text += `可以先幫我搭波卻可\n`;
+                text += `有誤的話～請趕快跟我說！\n`;
+                text += `₊⊹ 若是沒有漏掉的商品 ₊⊹\n`;
+                text += `就可以直接結帳囉！\n`;
+                text += `網址：（這裡留給我自己輸入網址）\n`;
+                text += `找到自己名字後完成下單就可以嚕\n`;
+                text += `𐙚 收到所有連結後請盡速完成付款\n`;
+                text += `   不要耽誤到最佳的賞味期限唷\n\n`;
+                
+                text += `⚝ p.s. 前一次連線有開箱分享的朋友~\n`;
+                text += `下單後請幫我備註一下：開箱禮\n`;
+                text += `𝐭𝐡𝐚𝐧𝐤 𝐲𝐨𝐮 („• ֊ •„)੭`;
+                
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    notify("訂單明細已複製");
+                } catch (err) {
+                    console.error('Copy failed', err);
+                    notify("複製失敗");
+                }
+                document.body.removeChild(textArea);
+            };
+
             // 批次匯出圖片邏輯
             const handleBatchExportImages = async () => {
                 if (batchSelection.size === 0) return notify("請先勾選顧客");
@@ -453,10 +491,8 @@
 
             const navigateTo = (tab) => { setActiveTab(tab); setSearchQuery(''); };
             
-            // 優化後的商品變更處理：當商品改變時，嘗試帶入該商品的價格
             const handleProxyProductChange = (e) => { 
                 const name = e.target.value; 
-                // 找出該名稱的任一款式來取得價格(如果有的話)
                 const existing = products.find(p => p.name === name); 
                 setProxyForm(prev => ({ 
                     ...prev, 
@@ -465,7 +501,6 @@
                 })); 
             };
 
-            // 新增：當款式變更時，嘗試帶入該特定款式的價格 (如果有的話)
             const handleProxyVariantChange = (e) => {
                 const variant = e.target.value;
                 setProxyForm(prev => {
@@ -935,6 +970,7 @@
                                         <div className="text-xs text-latte-500 font-bold mt-2 bg-white px-2 py-1 rounded-lg border border-cream-200 inline-block shadow-sm">總額: ${currentSelectedCustomer.totalSpent.toLocaleString()}</div>
                                     </div>
                                     <div className="flex gap-2">
+                                        <button onClick={()=>handleCopyOrderText(currentSelectedCustomer)} className="p-2.5 bg-white border border-cream-200 rounded-xl flex gap-1 text-xs items-center font-bold text-latte-600 shadow-sm active:scale-95 hover:bg-cream-50" title="複製文字"><ClipboardList size={18}/> 文案</button>
                                         <button onClick={()=>handleExportToImage(currentSelectedCustomer)} className="p-2.5 bg-white border border-cream-200 rounded-xl flex gap-1 text-xs items-center font-bold text-latte-600 shadow-sm active:scale-95 hover:bg-cream-50" title="匯出圖片"><ImageIcon size={18}/> 存圖</button>
                                         <button onClick={()=>{setProxyForm(prev=>({...prev,customer:currentSelectedCustomer.name}));setShowProxyOrder(true)}} className="p-2.5 bg-[#AEC8DB] text-white rounded-xl shadow-md shadow-[#AEC8DB]/20 active:scale-95 hover:brightness-105"><Plus size={18}/></button>
                                         <button onClick={()=>setSelectedCustomerDetail(null)} className="p-2.5 bg-cream-200 text-latte-600 rounded-xl active:scale-95 hover:bg-cream-300"><X size={18}/></button>
@@ -1016,5 +1052,3 @@
     </script>
 </body>
 </html>
-
-
