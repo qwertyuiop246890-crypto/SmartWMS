@@ -1,964 +1,1054 @@
 <!DOCTYPE html>
-<html lang="zh-TW" class="light">
+<html lang="zh-TW">
 <head>
-    <meta charset="utf-8"/>
-    <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
-    <title>MyMoney - 個人理財管家</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cuibo WMS 智慧連線倉庫管理系統</title>
     
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <!-- 1. 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet"/>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <!-- 2. 載入 Babel 用於解析 JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- 3. 載入外部套件 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+    <!-- 4. 設定自定義顏色 (Tailwind Config) -->
     <script>
         tailwind.config = {
-            darkMode: "class",
             theme: {
                 extend: {
                     colors: {
-                        "primary": "#6324eb",
-                        "primary-hover": "#501ac2",
-                        "background-light": "#f6f6f8",
-                        "background-dark": "#161121",
-                        "card-light": "#ffffff",
-                        "card-dark": "#1c162d",
-                        "text-main": "#120e1b",
-                        "text-sub": "#654d99",
-                        "success": "#10b981",
-                        "danger": "#f43f5e",
-                        "warning": "#f59e0b",
+                        cream: {
+                            50: '#FFFBF5',  // 輸入框/極淺底
+                            100: '#FCF4E9', // 全域主背景
+                            200: '#EBE0D6', // 邊框/分隔線
+                            300: '#D3C5BC', // 失效文字
+                        },
+                        latte: {
+                            400: '#B5A496', // 輔助文字
+                            500: '#957E6B', // 主強調色 (Brand Color)
+                            600: '#8C6A5D', // 深一點的強調
+                            800: '#5E4B41', // 主要文字 (深咖啡)
+                            900: '#4A3B32', // 極深色
+                        }
                     },
-                    fontFamily: {
-                        "display": ["Inter", "Noto Sans TC", "sans-serif"]
+                    boxShadow: {
+                        'soft': '0 4px 20px -5px rgba(149, 126, 107, 0.1)',
+                        'inner-soft': 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.02)',
                     }
-                },
-            },
+                }
+            }
         }
     </script>
 
     <style>
-        body { font-family: 'Inter', 'Noto Sans TC', sans-serif; -webkit-font-smoothing: antialiased; }
-        .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
-        
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        
-        .sidebar-fixed { width: 260px; transition: transform 0.3s ease; }
-        .main-content { transition: margin-left 0.3s ease; }
-        
-        /* Mobile handling */
-        @media (max-width: 768px) {
-            .sidebar-fixed { transform: translateX(-100%); z-index: 50; }
-            .sidebar-fixed.open { transform: translateX(0); }
-            .main-content { margin-left: 0 !important; }
-            .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; }
-            .overlay.active { display: block; }
-        }
-        @media (min-width: 769px) {
-            .main-content { margin-left: 260px; }
+        /* 全域樣式設定 */
+        body {
+            background-color: #FCF4E9; /* 主色調 */
+            color: #5E4B41; /* 主要文字顏色 */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
         }
 
-        /* Calculator Styles */
-        .calc-btn { user-select: none; }
-        .calc-btn:active { transform: scale(0.95); }
+        /* 隱藏卷軸但保留功能 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* 動畫 */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-in { animation: fadeIn 0.3s ease-out forwards; }
+        
+        /* 移除點擊高亮 */
+        * { -webkit-tap-highlight-color: transparent; }
+
+        /* --- 圖片匯出專用樣式 (隱藏區塊) --- */
+        #hidden-receipt-container {
+            position: fixed;
+            top: 0;
+            left: -9999px;
+            width: 500px;
+            background-color: #FCF4E9; /* 確保匯出圖片背景色一致 */
+            z-index: -100;
+            padding: 40px;
+            box-sizing: border-box;
+            font-family: sans-serif;
+            color: #5E4B41;
+            line-height: 1.5;
+        }
+        
+        .receipt-card {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 4px 20px rgba(149, 126, 107, 0.15);
+            border: 1px solid #EBE0D6;
+        }
+
+        .receipt-header {
+            text-align: center;
+            border-bottom: 2px dashed #D3C5BC;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }
+        .receipt-title { font-size: 24px; font-weight: 900; margin-bottom: 5px; color: #5E4B41; letter-spacing: 1px; }
+        .receipt-subtitle { font-size: 14px; color: #957E6B; }
+        
+        .receipt-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            font-size: 14px;
+            font-weight: 700;
+            color: #8C6A5D;
+        }
+
+        .receipt-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        .receipt-table th { text-align: left; font-size: 12px; color: #957E6B; padding-bottom: 8px; border-bottom: 1px solid #EBE0D6; }
+        .receipt-table td { padding: 12px 0; border-bottom: 1px dashed #EBE0D6; vertical-align: top; }
+        
+        .item-name { font-size: 14px; font-weight: 700; color: #5E4B41; display: block; margin-bottom: 2px; }
+        .item-spec { font-size: 12px; color: #B5A496; }
+        
+        .receipt-summary {
+            background-color: #FFFBF5;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: right;
+            border: 1px solid #EBE0D6;
+        }
+        .summary-total { display: flex; justify-content: space-between; font-size: 20px; font-weight: 900; color: #957E6B; margin-top: 10px; border-top: 1px solid #EBE0D6; padding-top: 10px; }
+        
+        .receipt-footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 12px;
+            color: #B5A496;
+            font-weight: bold;
+        }
     </style>
 </head>
-<body class="bg-background-light dark:bg-background-dark text-gray-800 dark:text-gray-100 h-screen flex overflow-hidden font-display selection:bg-primary selection:text-white">
+<body>
+    <div id="root"></div>
 
-    <!-- Data Logic Script (Core) -->
-    <script>
-        // --- State Management ---
-        const DB_KEY = 'mymoney_db_v1';
-        
-        // Global view states
-        let currentDashboardDate = new Date();
-        let transactionFilter = { type: 'all', start: null, end: null }; // For filtering transaction list
+    <script type="text/babel" data-type="module">
+        import React, { useState, useMemo, useEffect, useRef } from 'https://esm.sh/react@18.2.0?dev';
+        import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client?dev';
+        import { 
+            LayoutDashboard, Package, ShoppingCart, Users, Zap, Plus, ArrowRight, AlertCircle, 
+            CheckCircle2, Combine, Split, MessageCircle, Truck, DollarSign, Search, Filter, 
+            X, ChevronRight, ChevronUp, ClipboardList, User, ShoppingBag, ListOrdered, Tag, 
+            Layers, Archive, CheckSquare, Square, Trash2, Edit, Save, Copy, CreditCard, 
+            RotateCcw, Minus, TrendingUp, Wallet, BoxSelect, Undo2, PackageCheck, FileSpreadsheet,
+            Image as ImageIcon, Download, Loader2, Upload, Cloud, Settings, UploadCloud, DownloadCloud, FileJson
+        } from 'https://esm.sh/lucide-react@0.263.1?dev';
 
-        const defaultData = {
-            settings: {
-                cycleStartDay: 1, // 每月1號結帳
-                currency: 'TWD',
-                darkMode: false
-            },
-            accounts: [
-                { id: 'acc_1', name: '現金錢包', type: 'cash', balance: 5000, color: 'bg-green-100 text-green-600' },
-                { id: 'acc_2', name: '中國信託', type: 'bank', balance: 150000, color: 'bg-blue-100 text-blue-600' },
-                { id: 'acc_3', name: '台新信用卡', type: 'credit', balance: -12500, color: 'bg-rose-100 text-rose-600' }
-            ],
-            categories: {
-                expense: ['餐飲食品', '交通運輸', '休閒娛樂', '居家生活', '購物採買', '醫療保健', '其他支出'],
-                income: ['薪資收入', '獎金', '投資理財', '兼職收入', '其他收入']
-            },
-            budgets: [
-                { id: 'bdg_1', category: '餐飲食品', limit: 15000 },
-                { id: 'bdg_2', category: '交通運輸', limit: 5000 },
-                { id: 'bdg_3', category: '休閒娛樂', limit: 8000 }
-            ],
-            transactions: [
-                // Init with some dummy data if empty
-            ]
-        };
-
-        // Initialize Data
-        let appData = JSON.parse(localStorage.getItem(DB_KEY)) || (() => {
-            // Seed initial transactions if new
-            const now = new Date();
-            const seed = JSON.parse(JSON.stringify(defaultData));
-            seed.transactions.push(
-                { id: 'tx_init_1', date: new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString().split('T')[0], type: 'income', amount: 50000, category: '薪資收入', accountId: 'acc_2', note: '本月薪資' },
-                { id: 'tx_init_2', date: new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString().split('T')[0], type: 'expense', amount: 120, category: '餐飲食品', accountId: 'acc_1', note: '午餐' },
-                { id: 'tx_init_3', date: new Date(now.getFullYear(), now.getMonth(), now.getDate()-1).toISOString().split('T')[0], type: 'expense', amount: 1200, category: '休閒娛樂', accountId: 'acc_3', note: '健身房月費' }
-            );
-            return seed;
-        })();
-
-        // --- Core Functions ---
-        function saveData() {
-            localStorage.setItem(DB_KEY, JSON.stringify(appData));
-            updateUI(); // Trigger reactivity
-        }
-
-        function generateId() {
-            return Date.now().toString(36) + Math.random().toString(36).substr(2);
-        }
-
-        function formatMoney(amount) {
-            return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0 }).format(amount);
-        }
-
-        // Logic: Calculate Cycle Range based on settings
-        function getCycleRange(referenceDate) {
-            const startDay = parseInt(appData.settings.cycleStartDay);
-            const year = referenceDate.getFullYear();
-            const month = referenceDate.getMonth(); // 0-11
-            const day = referenceDate.getDate();
-
-            let startDate, endDate;
-
-            if (day >= startDay) {
-                // Current month cycle
-                startDate = new Date(year, month, startDay);
-                endDate = new Date(year, month + 1, startDay - 1); // rough approximation logic
-                // Better end date logic:
-                let nextMonth = new Date(year, month + 1, startDay);
-                nextMonth.setDate(nextMonth.getDate() - 1);
-                endDate = nextMonth;
-            } else {
-                // Previous month cycle logic (e.g. today is 2nd, start day is 5th. Cycle is Prev Month 5th to This Month 4th)
-                startDate = new Date(year, month - 1, startDay);
-                let currentMonthEnd = new Date(year, month, startDay);
-                currentMonthEnd.setDate(currentMonthEnd.getDate() - 1);
-                endDate = currentMonthEnd;
-            }
+        const App = () => {
+            // --- 核心邏輯保持不變 ---
             
-            // Set times to boundary
-            startDate.setHours(0,0,0,0);
-            endDate.setHours(23,59,59,999);
+            // 1. 資料讀取與狀態
+            const loadLocal = (key, def) => {
+                const saved = localStorage.getItem(key);
+                return saved ? JSON.parse(saved) : def;
+            };
 
-            return { start: startDate, end: endDate };
-        }
+            const [products, setProducts] = useState(() => loadLocal('smartwms_products', [
+                { id: 'p1', name: '日本極致吹風機', variant: '珍珠白', spot: 2, price: 3200, tierMinQty: 0, tierPrice: 0 },
+                { id: 'p2', name: '日本極致吹風機', variant: '消光黑', spot: 3, price: 3200, tierMinQty: 0, tierPrice: 0 },
+                { id: 'p3', name: '法式黑巧克力盒', variant: '單一款式', spot: 20, price: 450, tierMinQty: 0, tierPrice: 0 },
+            ]));
+            const [orders, setOrders] = useState(() => loadLocal('smartwms_orders', [
+                { id: 'o1', customer: '林小美', total: 6400, paid: 0, status: '部分到貨', items: [{ productId: 'p1', name: '日本極致吹風機', variant: '珍珠白', qty: 2, allocatedQty: 1, price: 3200 }], debt: 0, unclaimed: 1 },
+            ]));
+            
+            const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('smartwms_api_url') || '');
 
-        function formatDate(dateObj) {
-            return `${dateObj.getFullYear()}/${(dateObj.getMonth()+1).toString().padStart(2, '0')}/${dateObj.getDate().toString().padStart(2, '0')}`;
-        }
+            // Local Storage Persistence
+            useEffect(() => { localStorage.setItem('smartwms_products', JSON.stringify(products)); }, [products]);
+            useEffect(() => { localStorage.setItem('smartwms_orders', JSON.stringify(orders)); }, [orders]);
+            useEffect(() => { localStorage.setItem('smartwms_api_url', apiUrl); }, [apiUrl]);
 
-        // Logic: Calculate Account Balances Dynamically
-        function getAccountBalance(accountId) {
-            const acc = appData.accounts.find(a => a.id === accountId);
-            if (!acc) return 0;
-            return acc.balance;
-        }
+            // UI States
+            const [activeTab, setActiveTab] = useState('products');
+            const [showProxyOrder, setShowProxyOrder] = useState(false);
+            const [showPurchaseList, setShowPurchaseList] = useState(false);
+            const [showRevenueList, setShowRevenueList] = useState(false);
+            const [showSettings, setShowSettings] = useState(false);
+            
+            const [selectedGroupName, setSelectedGroupName] = useState(null); 
+            const [selectedCustomerDetail, setSelectedCustomerDetail] = useState(null);
+            const [selectedArrivalCustomer, setSelectedArrivalCustomer] = useState(null); 
+            
+            const [isEditingProduct, setIsEditingProduct] = useState(false);
+            const [isSyncing, setIsSyncing] = useState(false);
+            
+            const [editingOrderQtyId, setEditingOrderQtyId] = useState(null);
+            const [editingAllocatedQtyId, setEditingAllocatedQtyId] = useState(null);
+            const [editingPurchaseQtyId, setEditingPurchaseQtyId] = useState(null);
+            
+            const [exportTargetCustomer, setExportTargetCustomer] = useState(null); 
+            
+            // 批次下載狀態
+            const [isBatchMode, setIsBatchMode] = useState(false);
+            const [batchSelection, setBatchSelection] = useState(new Set());
+            const [isProcessingBatch, setIsProcessingBatch] = useState(false);
 
-        // Logic: Get Dashboard Stats (Specific Range)
-        function getStatsForRange(range) {
-            let income = 0;
-            let expense = 0;
-
-            appData.transactions.forEach(tx => {
-                const txDate = new Date(tx.date);
-                // Adjust txDate to match comparison (ignore time)
-                txDate.setHours(12,0,0,0);
-                
-                if (txDate >= range.start && txDate <= range.end) {
-                    if (tx.type === 'income') income += parseFloat(tx.amount);
-                    if (tx.type === 'expense') expense += parseFloat(tx.amount);
-                }
+            const [proxyForm, setProxyForm] = useState({
+                productName: '', variant: '', price: '', customer: '', qty: 1, purchasedQty: 0
             });
 
-            return { income, expense, balance: income - expense };
-        }
-
-        // Logic: Budget Progress
-        function getBudgetProgress(category, range) {
-            const spent = appData.transactions
-                .filter(tx => {
-                    const txDate = new Date(tx.date);
-                    txDate.setHours(12,0,0,0);
-                    return tx.category === category && tx.type === 'expense' && txDate >= range.start && txDate <= range.end;
-                })
-                .reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+            const [notification, setNotification] = useState(null);
+            const [searchQuery, setSearchQuery] = useState('');
             
-            return spent;
-        }
+            const fileInputRef = useRef(null);
 
-        // Logic: Add Transaction
-        function addTransaction(tx) {
-            tx.id = tx.id || generateId();
-            appData.transactions.unshift(tx);
+            const notify = (msg) => {
+                setNotification(msg);
+                setTimeout(() => setNotification(null), 3000);
+            };
 
-            // Update Account Balances
-            const amount = parseFloat(tx.amount);
-            if (tx.type === 'expense') {
-                const acc = appData.accounts.find(a => a.id === tx.accountId);
-                if (acc) acc.balance -= amount;
-            } else if (tx.type === 'income') {
-                const acc = appData.accounts.find(a => a.id === tx.accountId);
-                if (acc) acc.balance += amount;
-            } else if (tx.type === 'transfer') {
-                const fromAcc = appData.accounts.find(a => a.id === tx.accountId);
-                const toAcc = appData.accounts.find(a => a.id === tx.toAccountId);
-                if (fromAcc) fromAcc.balance -= amount;
-                if (toAcc) toAcc.balance += amount;
-            }
+            // 2. 數據計算 (Data Calculations)
+            const productsWithStats = useMemo(() => {
+                return products.map(p => {
+                    let allocated = 0; let confirmed = 0; 
+                    orders.forEach(o => {
+                        if (o.items) {
+                            o.items.forEach(item => {
+                                if (item.productId === p.id) {
+                                    allocated += (item.qty || 0);
+                                    confirmed += (item.allocatedQty || 0);
+                                }
+                            });
+                        }
+                    });
+                    const pending = allocated - confirmed;
+                    const totalOwned = (p.spot || 0) + confirmed;
+                    const shortage = Math.max(0, allocated - totalOwned);
+                    return { ...p, allocated, confirmed, pending, shortage };
+                });
+            }, [products, orders]);
 
-            saveData();
-        }
+            const customerList = useMemo(() => {
+                const map = {};
+                orders.forEach(o => {
+                    if (!map[o.customer]) {
+                        map[o.customer] = { id: o.customer, name: o.customer, totalSpent: 0, totalPaid: o.paid || 0, orderCount: 0, debt: 0, items: [], rawItems: [] };
+                    } else { map[o.customer].totalPaid += (o.paid || 0); }
+                    map[o.customer].orderCount += 1;
+                    if (o.items) o.items.forEach(item => map[o.customer].rawItems.push({ ...item, orderId: o.id }));
+                });
 
-        // Logic: Delete Transaction
-        function deleteTransaction(id) {
-            const txIndex = appData.transactions.findIndex(t => t.id === id);
-            if (txIndex === -1) return;
+                Object.values(map).forEach(cust => {
+                    const nameCounts = {};
+                    cust.rawItems.forEach(item => {
+                        const productInfo = products.find(p => p.id === item.productId);
+                        const productName = productInfo ? productInfo.name : item.name;
+                        if (!nameCounts[productName]) nameCounts[productName] = 0;
+                        nameCounts[productName] += item.qty;
+                    });
+                    cust.rawItems.forEach(item => {
+                        const productInfo = products.find(p => p.id === item.productId);
+                        let finalPrice = item.price;
+                        let originalPrice = item.price;
+                        let tierMinQty = 0;
+                        let tierPrice = 0;
+                        if (productInfo) {
+                            originalPrice = productInfo.price;
+                            tierMinQty = productInfo.tierMinQty;
+                            tierPrice = productInfo.tierPrice;
+                            const pName = productInfo.name;
+                            if (tierMinQty > 0 && tierPrice > 0 && nameCounts[pName] >= tierMinQty) {
+                                finalPrice = tierPrice;
+                            }
+                        }
+                        const itemTotal = (item.qty || 0) * finalPrice;
+                        cust.items.push({
+                            ...item, finalPrice, isDiscounted: finalPrice < originalPrice, itemTotal, isAllocated: (item.allocatedQty || 0) >= item.qty
+                        });
+                        cust.totalSpent += itemTotal;
+                    });
+                    cust.debt = Math.max(0, cust.totalSpent - cust.totalPaid);
+                });
+                return Object.values(map);
+            }, [orders, products]);
 
-            const tx = appData.transactions[txIndex];
-            const amount = parseFloat(tx.amount);
+            const stats = useMemo(() => {
+                const totalRevenue = customerList.reduce((acc, curr) => acc + curr.totalSpent, 0); 
+                let shortageItemCount = 0; let totalShortageQty = 0;  
+                productsWithStats.forEach(p => { if (p.shortage > 0) { shortageItemCount += 1; totalShortageQty += p.shortage; } });
+                return { totalRevenue, shortageItemCount, totalShortageQty };
+            }, [productsWithStats, customerList]); 
 
-            // Revert Balance
-            if (tx.type === 'expense') {
-                const acc = appData.accounts.find(a => a.id === tx.accountId);
-                if (acc) acc.balance += amount;
-            } else if (tx.type === 'income') {
-                const acc = appData.accounts.find(a => a.id === tx.accountId);
-                if (acc) acc.balance -= amount;
-            } else if (tx.type === 'transfer') {
-                const fromAcc = appData.accounts.find(a => a.id === tx.accountId);
-                const toAcc = appData.accounts.find(a => a.id === tx.toAccountId);
-                if (fromAcc) fromAcc.balance += amount;
-                if (toAcc) toAcc.balance -= amount;
-            }
+            const arrivalCustomers = useMemo(() => {
+                return customerList.map(cust => {
+                    const totalItems = cust.items.length;
+                    const fullItems = cust.items.filter(i => (i.allocatedQty || 0) >= i.qty).length;
+                    const totalQty = cust.items.reduce((s, i) => s + (i.qty || 0), 0);
+                    const allocatedQty = cust.items.reduce((s, i) => s + (i.allocatedQty || 0), 0);
+                    const isFullyArrived = totalItems > 0 && totalItems === fullItems;
+                    return { ...cust, totalItems, fullItems, totalQty, allocatedQty, isFullyArrived };
+                }).sort((a,b) => (a.isFullyArrived === b.isFullyArrived ? 0 : a.isFullyArrived ? -1 : 1));
+            }, [customerList]);
 
-            appData.transactions.splice(txIndex, 1);
-            saveData();
-        }
+            const { pendingArrivals, shippedArrivals } = useMemo(() => {
+                const pending = [], shipped = [];
+                arrivalCustomers.forEach(c => {
+                    const hasPending = orders.some(o => o.customer === c.name && o.status !== '已出貨');
+                    if (hasPending) pending.push(c);
+                    else if (orders.some(o => o.customer === c.name)) shipped.push(c);
+                });
+                return { pendingArrivals: pending, shippedArrivals: shipped };
+            }, [arrivalCustomers, orders]);
 
-        function changeCycleStartDay() {
-            const current = appData.settings.cycleStartDay;
-            const newVal = prompt("請輸入每月的結帳起始日 (1-31):", current);
-            if (newVal !== null) {
-                const day = parseInt(newVal);
-                if (day >= 1 && day <= 31) {
-                    appData.settings.cycleStartDay = day;
-                    saveData();
-                    alert(`設定已更新：每月 ${day} 號為週期起始日`);
-                } else {
-                    alert("請輸入有效的日期 (1-31)");
+            const groupedProducts = useMemo(() => {
+                 const groups = {};
+                 products.forEach(p => {
+                     if(!groups[p.name]) groups[p.name] = { ...p, variants: [], totalAllocated:0, totalConfirmed:0, totalSpot:0 };
+                     groups[p.name].variants.push(p);
+                     const stats = productsWithStats.find(ps => ps.id === p.id);
+                     if(stats) {
+                         groups[p.name].totalAllocated += stats.allocated;
+                         groups[p.name].totalConfirmed += stats.confirmed;
+                         groups[p.name].totalSpot += (p.spot || 0);
+                     }
+                 });
+                 return Object.values(groups);
+            }, [products, productsWithStats]);
+            
+            const getGroupAllocations = (groupName) => {
+                 let allocations = [];
+                 orders.forEach(o => {
+                     o.items.forEach(item => {
+                         if(item.name === groupName) {
+                            allocations.push({
+                                orderId: o.id,
+                                customer: o.customer,
+                                productId: item.productId,
+                                variant: item.variant,
+                                qty: item.qty,
+                                allocatedQty: item.allocatedQty || 0,
+                                isAllocated: (item.allocatedQty || 0) >= item.qty
+                            });
+                         }
+                     });
+                 });
+                 return allocations;
+            };
+
+            const purchaseList = useMemo(() => productsWithStats.filter(p => p.shortage > 0).map(p => ({ ...p })), [productsWithStats]);
+            const revenueCustomers = useMemo(() => customerList.filter(c => c.totalSpent > 0).sort((a, b) => b.totalSpent - a.totalSpent), [customerList]);
+
+            const filteredGroupedProducts = groupedProducts.filter(g => g.name.includes(searchQuery));
+            const filteredCustomers = customerList.filter(c => c.name.includes(searchQuery));
+            const filteredPendingArrivals = pendingArrivals.filter(c => c.name.includes(searchQuery));
+            const filteredShippedArrivals = shippedArrivals.filter(c => c.name.includes(searchQuery));
+            
+            // --- 優化後的款式建議邏輯 (Smart Variants) ---
+            const availableVariants = useMemo(() => {
+                const exactMatch = products.filter(p => p.name === proxyForm.productName);
+                if (exactMatch.length > 0) {
+                    return [...new Set(exactMatch.map(p => p.variant))];
                 }
-            }
-        }
+                return [...new Set(products.map(p => p.variant))];
+            }, [products, proxyForm.productName]);
 
-    </script>
+            // 3. 事件處理 (Handlers)
+            const handleExportBackup = () => {
+                const data = { products, orders, timestamp: new Date().toISOString() };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+                saveAs(blob, `CuiboWMS_Backup_${new Date().toISOString().slice(0,10)}.json`);
+                notify("備份檔已下載");
+            };
 
-    <!-- Sidebar Overlay for Mobile -->
-    <div id="mobile-overlay" class="overlay" onclick="toggleSidebar()"></div>
+            const handleImportBackup = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        if (data.products && data.orders) {
+                            if(confirm(`確定要還原備份資料嗎？\n備份時間: ${data.timestamp || '未知'}\n目前的資料將被覆蓋！`)) {
+                                setProducts(data.products);
+                                setOrders(data.orders);
+                                notify("資料還原成功！");
+                            }
+                        } else {
+                            notify("無效的備份檔案格式");
+                        }
+                    } catch (err) { console.error(err); notify("讀取檔案失敗"); }
+                    event.target.value = '';
+                };
+                reader.readAsText(file);
+            };
 
-    <!-- Sidebar -->
-    <aside id="sidebar" class="sidebar-fixed fixed inset-y-0 left-0 bg-white dark:bg-card-dark border-r border-gray-200 dark:border-gray-800 flex flex-col z-50">
-        <div class="p-6 flex items-center gap-3">
-            <div class="size-10 bg-primary rounded-xl flex items-center justify-center text-white shadow-lg shadow-primary/30">
-                <span class="material-symbols-outlined">account_balance_wallet</span>
-            </div>
-            <div>
-                <h1 class="font-bold text-lg text-text-main dark:text-white leading-none">MyMoney</h1>
-                <p class="text-xs text-text-sub mt-1">智慧理財管家</p>
-            </div>
-        </div>
+            const handleExportToImage = async (customer) => {
+                if (!customer) return;
+                setExportTargetCustomer(customer);
+                await new Promise(resolve => setTimeout(resolve, 100));
+                const element = document.getElementById('hidden-receipt-container');
+                if (!element) return;
+                try {
+                    const canvas = await html2canvas(element, { useCORS: true, backgroundColor: '#FCF4E9', scale: 2 });
+                    const dataUrl = canvas.toDataURL('image/png');
+                    const link = document.createElement('a');
+                    link.download = `${customer.name}_訂單明細.png`;
+                    link.href = dataUrl;
+                    link.click();
+                    notify("圖片已匯出");
+                } catch (err) { console.error(err); notify("匯出失敗"); } finally { setExportTargetCustomer(null); }
+            };
 
-        <nav class="flex-1 px-4 space-y-1 overflow-y-auto">
-            <a href="#" onclick="switchView('dashboard')" class="nav-item flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl bg-primary/10 text-primary transition-colors">
-                <span class="material-symbols-outlined">dashboard</span>
-                儀表板
-            </a>
-            <a href="#" onclick="switchView('transactions', true)" class="nav-item flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
-                <span class="material-symbols-outlined">receipt_long</span>
-                交易紀錄
-            </a>
-            <a href="#" onclick="switchView('budgets')" class="nav-item flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
-                <span class="material-symbols-outlined">pie_chart</span>
-                預算規劃
-            </a>
-            <a href="#" onclick="switchView('accounts')" class="nav-item flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
-                <span class="material-symbols-outlined">account_balance</span>
-                帳戶管理
-            </a>
-        </nav>
-
-        <div class="p-4 border-t border-gray-100 dark:border-gray-800">
-            <div class="flex items-center gap-3 p-2 rounded-lg bg-gray-50 dark:bg-white/5">
-                <div class="size-8 rounded-full bg-gradient-to-tr from-primary to-purple-400"></div>
-                <div class="flex-1 min-w-0">
-                    <p class="text-sm font-bold text-text-main dark:text-white truncate">使用者</p>
-                    <p class="text-xs text-text-sub truncate">Pro Plan</p>
-                </div>
-            </div>
-        </div>
-    </aside>
-
-    <!-- Main Content -->
-    <main class="main-content flex-1 flex flex-col h-full relative overflow-hidden bg-background-light dark:bg-background-dark">
-        <!-- Header -->
-        <header class="h-16 flex items-center justify-between px-6 bg-white/80 dark:bg-card-dark/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 sticky top-0 z-30">
-            <div class="flex items-center gap-4">
-                <button onclick="toggleSidebar()" class="md:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg">
-                    <span class="material-symbols-outlined">menu</span>
-                </button>
-                <h2 id="page-title" class="text-xl font-bold text-text-main dark:text-white">儀表板</h2>
-            </div>
-            <div class="flex items-center gap-3">
-                <button onclick="openModal()" class="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg font-bold text-sm shadow-lg shadow-primary/20 transition-all active:scale-95">
-                    <span class="material-symbols-outlined text-[20px]">add</span>
-                    <span class="hidden sm:inline">快速記帳</span>
-                </button>
-            </div>
-        </header>
-
-        <!-- Dynamic Content Container -->
-        <div id="content-area" class="flex-1 overflow-y-auto p-6 scroll-smooth">
-            <!-- Content Injected via JS -->
-        </div>
-    </main>
-
-    <!-- Add Transaction Modal -->
-    <div id="transaction-modal" class="hidden fixed inset-0 z-50">
-        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onclick="closeModal()"></div>
-        <div class="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
-            <div class="bg-white dark:bg-card-dark w-full max-w-4xl h-[90vh] md:h-auto rounded-2xl shadow-2xl flex flex-col md:flex-row overflow-hidden pointer-events-auto transform transition-all scale-100">
+            // 複製訂單文案函式
+            const handleCopyOrderText = (customer) => {
+                if (!customer) return;
+                let text = `親愛的 ${customer.name} 您好，\n`;
+                text += `您本次的連線購物明細如下：\n\n`;
                 
-                <!-- Left Form -->
-                <div class="flex-1 p-6 flex flex-col overflow-y-auto">
-                    <div class="flex justify-between items-center mb-6">
-                        <h3 class="text-xl font-bold text-text-main dark:text-white">新增交易</h3>
-                        <button onclick="closeModal()" class="md:hidden text-gray-500"><span class="material-symbols-outlined">close</span></button>
-                    </div>
-
-                    <!-- Type Switcher -->
-                    <div class="flex bg-gray-100 dark:bg-white/5 p-1 rounded-xl mb-6">
-                        <button onclick="setTxType('expense')" id="btn-type-expense" class="flex-1 py-2 rounded-lg text-sm font-bold transition-all bg-white dark:bg-gray-700 text-danger shadow-sm">支出</button>
-                        <button onclick="setTxType('income')" id="btn-type-income" class="flex-1 py-2 rounded-lg text-sm font-bold text-gray-500 transition-all">收入</button>
-                        <button onclick="setTxType('transfer')" id="btn-type-transfer" class="flex-1 py-2 rounded-lg text-sm font-bold text-gray-500 transition-all">轉帳</button>
-                    </div>
-
-                    <!-- Amount Display (Linked to Calculator) -->
-                    <div class="mb-6">
-                        <label class="text-xs font-bold text-gray-500 uppercase">金額</label>
-                        <div class="relative mt-1">
-                            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-gray-400">$</span>
-                            <input id="input-amount" type="text" readonly class="w-full pl-10 pr-4 py-3 bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 rounded-xl text-3xl font-bold text-text-main dark:text-white outline-none focus:border-primary text-right font-mono" value="0">
-                        </div>
-                    </div>
-
-                    <!-- Form Fields -->
-                    <div class="space-y-4 flex-1">
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">日期</label>
-                                <input id="input-date" type="date" class="w-full p-2 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-gray-700 rounded-lg dark:text-white outline-none focus:ring-2 focus:ring-primary/50">
-                            </div>
-                            <!-- Category (Hidden for Transfer) -->
-                            <div id="field-category">
-                                <label class="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">分類</label>
-                                <select id="input-category" class="w-full p-2 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-gray-700 rounded-lg dark:text-white outline-none">
-                                    <!-- Options filled by JS -->
-                                </select>
-                            </div>
-                        </div>
-
-                        <!-- Account Selection -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label id="label-acc-from" class="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">支付帳戶</label>
-                                <select id="input-account" class="w-full p-2 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-gray-700 rounded-lg dark:text-white outline-none">
-                                    <!-- Accounts filled by JS -->
-                                </select>
-                            </div>
-                            <div id="field-acc-to" class="hidden">
-                                <label class="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">轉入帳戶</label>
-                                <select id="input-account-to" class="w-full p-2 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-gray-700 rounded-lg dark:text-white outline-none">
-                                    <!-- Accounts filled by JS -->
-                                </select>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">備註</label>
-                            <input id="input-note" type="text" class="w-full p-2 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-gray-700 rounded-lg dark:text-white outline-none placeholder-gray-400" placeholder="輸入備註...">
-                        </div>
-
-                        <div class="flex items-center gap-2 pt-2">
-                            <input type="checkbox" id="input-recurring" class="w-4 h-4 text-primary rounded focus:ring-primary border-gray-300">
-                            <label for="input-recurring" class="text-sm text-gray-600 dark:text-gray-400">設為定期交易 (每月)</label>
-                        </div>
-                    </div>
-
-                    <div class="mt-6 flex gap-3">
-                        <button onclick="closeModal()" class="flex-1 py-3 bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 font-bold rounded-xl hover:bg-gray-200 transition-colors">取消</button>
-                        <button onclick="submitTransaction()" class="flex-1 py-3 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/25 hover:bg-primary-hover transition-colors">確認儲存</button>
-                    </div>
-                </div>
-
-                <!-- Calculator Sidebar -->
-                <div class="w-full md:w-80 bg-gray-50 dark:bg-[#131313] border-l border-gray-200 dark:border-gray-800 p-6 flex flex-col">
-                    <div class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">計算機</div>
-                    <div class="grid grid-cols-4 gap-2 flex-1 h-full">
-                        <button onclick="calcInput('7')" class="calc-btn bg-white dark:bg-gray-800 rounded-lg shadow-sm text-xl font-bold dark:text-white hover:bg-gray-100">7</button>
-                        <button onclick="calcInput('8')" class="calc-btn bg-white dark:bg-gray-800 rounded-lg shadow-sm text-xl font-bold dark:text-white hover:bg-gray-100">8</button>
-                        <button onclick="calcInput('9')" class="calc-btn bg-white dark:bg-gray-800 rounded-lg shadow-sm text-xl font-bold dark:text-white hover:bg-gray-100">9</button>
-                        <button onclick="calcInput('/')" class="calc-btn bg-primary/10 text-primary rounded-lg font-bold text-xl hover:bg-primary/20">÷</button>
-                        
-                        <button onclick="calcInput('4')" class="calc-btn bg-white dark:bg-gray-800 rounded-lg shadow-sm text-xl font-bold dark:text-white hover:bg-gray-100">4</button>
-                        <button onclick="calcInput('5')" class="calc-btn bg-white dark:bg-gray-800 rounded-lg shadow-sm text-xl font-bold dark:text-white hover:bg-gray-100">5</button>
-                        <button onclick="calcInput('6')" class="calc-btn bg-white dark:bg-gray-800 rounded-lg shadow-sm text-xl font-bold dark:text-white hover:bg-gray-100">6</button>
-                        <button onclick="calcInput('*')" class="calc-btn bg-primary/10 text-primary rounded-lg font-bold text-xl hover:bg-primary/20">×</button>
-                        
-                        <button onclick="calcInput('1')" class="calc-btn bg-white dark:bg-gray-800 rounded-lg shadow-sm text-xl font-bold dark:text-white hover:bg-gray-100">1</button>
-                        <button onclick="calcInput('2')" class="calc-btn bg-white dark:bg-gray-800 rounded-lg shadow-sm text-xl font-bold dark:text-white hover:bg-gray-100">2</button>
-                        <button onclick="calcInput('3')" class="calc-btn bg-white dark:bg-gray-800 rounded-lg shadow-sm text-xl font-bold dark:text-white hover:bg-gray-100">3</button>
-                        <button onclick="calcInput('-')" class="calc-btn bg-primary/10 text-primary rounded-lg font-bold text-xl hover:bg-primary/20">-</button>
-                        
-                        <button onclick="calcInput('0')" class="calc-btn col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm text-xl font-bold dark:text-white hover:bg-gray-100">0</button>
-                        <button onclick="calcInput('.')" class="calc-btn bg-white dark:bg-gray-800 rounded-lg shadow-sm text-xl font-bold dark:text-white hover:bg-gray-100">.</button>
-                        <button onclick="calcInput('+')" class="calc-btn bg-primary/10 text-primary rounded-lg font-bold text-xl hover:bg-primary/20">+</button>
-                        
-                        <button onclick="calcClear()" class="calc-btn col-span-2 py-3 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-bold rounded-lg hover:bg-gray-300">C</button>
-                        <button onclick="calcBackspace()" class="calc-btn col-span-2 py-3 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-bold rounded-lg hover:bg-gray-300 flex items-center justify-center">
-                            <span class="material-symbols-outlined">backspace</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- UI Logic Script -->
-    <script>
-        // --- Navigation ---
-        let currentView = 'dashboard';
-
-        function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('open');
-            document.getElementById('mobile-overlay').classList.toggle('active');
-        }
-
-        function switchView(viewName, resetFilter = true) {
-            currentView = viewName;
-            
-            if (resetFilter) {
-                // Reset filter when navigating via sidebar
-                transactionFilter = { type: 'all', start: null, end: null };
-            }
-
-            // Update Sidebar Active State
-            document.querySelectorAll('.nav-item').forEach(el => {
-                if(el.getAttribute('onclick').includes(`'${viewName}'`)) {
-                    el.className = 'nav-item flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl bg-primary/10 text-primary transition-colors';
-                } else {
-                    el.className = 'nav-item flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors';
+                customer.items.forEach(item => {
+                    text += `${item.name} ${item.variant !== '單一款式' ? `(${item.variant})` : ''} x ${item.qty} $${item.itemTotal}\n`;
+                });
+                
+                text += `----------------\n`;
+                text += `消費總額：$${customer.totalSpent.toLocaleString()}\n\n`;
+                
+                text += `可以先幫我搭波卻可\n`;
+                text += `有誤的話～請趕快跟我說！\n`;
+                text += `₊⊹ 若是沒有漏掉的商品 ₊⊹\n`;
+                text += `就可以直接結帳囉！\n`;
+                text += `網址：（這裡留給我自己輸入網址）\n`;
+                text += `找到自己名字後完成下單就可以嚕\n`;
+                text += `𐙚 收到所有連結後請盡速完成付款\n`;
+                text += `   不要耽誤到最佳的賞味期限唷\n\n`;
+                
+                text += `⚝ p.s. 前一次連線有開箱分享的朋友~\n`;
+                text += `下單後請幫我備註一下：開箱禮\n`;
+                text += `𝐭𝐡𝐚𝐧𝐤 𝐲𝐨𝐮 („• ֊ •„)੭`;
+                
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    notify("訂單明細已複製");
+                } catch (err) {
+                    console.error('Copy failed', err);
+                    notify("複製失敗");
                 }
-            });
-
-            // Update Header Title
-            const titles = {
-                'dashboard': '儀表板',
-                'transactions': '交易紀錄',
-                'budgets': '預算規劃',
-                'accounts': '帳戶管理'
+                document.body.removeChild(textArea);
             };
-            document.getElementById('page-title').innerText = titles[viewName];
 
-            // Close sidebar on mobile
-            document.getElementById('sidebar').classList.remove('open');
-            document.getElementById('mobile-overlay').classList.remove('active');
-
-            updateUI();
-        }
-
-        // --- View Filtering Logic (Dashboard specific) ---
-        function shiftDashboardCycle(offset) {
-            // Shift currentDashboardDate by months
-            const newDate = new Date(currentDashboardDate);
-            newDate.setMonth(newDate.getMonth() + offset);
-            currentDashboardDate = newDate;
-            updateUI();
-        }
-
-        function viewFilteredTransactions(type) {
-            // Triggered from Dashboard Cards
-            const cycle = getCycleRange(currentDashboardDate);
-            transactionFilter = {
-                type: type,
-                start: cycle.start,
-                end: cycle.end,
-                displayRange: `${formatDate(cycle.start)} - ${formatDate(cycle.end)}`
-            };
-            switchView('transactions', false);
-        }
-
-
-        // --- Render Functions ---
-        function updateUI() {
-            const container = document.getElementById('content-area');
-            container.innerHTML = '';
-
-            if (currentView === 'dashboard') renderDashboard(container);
-            else if (currentView === 'transactions') renderTransactions(container);
-            else if (currentView === 'budgets') renderBudgets(container);
-            else if (currentView === 'accounts') renderAccounts(container);
-        }
-
-        function renderDashboard(container) {
-            const cycle = getCycleRange(currentDashboardDate);
-            const stats = getStatsForRange(cycle);
-            
-            // Cycle UI Label
-            const cycleLabel = `${formatDate(cycle.start)} - ${formatDate(cycle.end)}`;
-
-            const html = `
-                <!-- Cycle Selector Header -->
-                <div class="flex flex-col sm:flex-row items-center justify-between mb-8 gap-4">
-                    <div class="flex items-center gap-4 bg-white dark:bg-card-dark p-2 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                        <button onclick="shiftDashboardCycle(-1)" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-500">
-                            <span class="material-symbols-outlined">chevron_left</span>
-                        </button>
-                        <div class="text-center min-w-[200px]">
-                            <p class="text-xs text-gray-400 font-bold uppercase tracking-wider">目前檢視週期</p>
-                            <p class="text-sm font-bold text-text-main dark:text-white">${cycleLabel}</p>
-                        </div>
-                        <button onclick="shiftDashboardCycle(1)" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-500">
-                            <span class="material-symbols-outlined">chevron_right</span>
-                        </button>
-                    </div>
+            // 批次匯出圖片邏輯
+            const handleBatchExportImages = async () => {
+                if (batchSelection.size === 0) return notify("請先勾選顧客");
+                
+                setIsProcessingBatch(true);
+                const zip = new JSZip();
+                
+                try {
+                    const targets = customerList.filter(c => batchSelection.has(c.name));
                     
-                    <button onclick="changeCycleStartDay()" class="flex items-center gap-2 text-sm text-gray-500 hover:text-primary transition-colors px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5">
-                        <span class="material-symbols-outlined text-[18px]">settings</span>
-                        設定週期起始日 (${appData.settings.cycleStartDay}號)
-                    </button>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                    <!-- Income (Clickable) -->
-                    <div onclick="viewFilteredTransactions('income')" class="cursor-pointer bg-white dark:bg-card-dark p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 relative overflow-hidden group hover:border-success/30 transition-colors">
-                        <div class="absolute right-0 top-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                            <span class="material-symbols-outlined text-[80px] text-success">trending_up</span>
-                        </div>
-                        <div class="flex items-center gap-2 mb-1">
-                            <p class="text-sm font-medium text-gray-500">本週期收入</p>
-                            <span class="material-symbols-outlined text-[16px] text-gray-300">open_in_new</span>
-                        </div>
-                        <h3 class="text-3xl font-extrabold text-text-main dark:text-white">${formatMoney(stats.income)}</h3>
-                    </div>
-                    <!-- Expense (Clickable) -->
-                    <div onclick="viewFilteredTransactions('expense')" class="cursor-pointer bg-white dark:bg-card-dark p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 relative overflow-hidden group hover:border-danger/30 transition-colors">
-                        <div class="absolute right-0 top-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                            <span class="material-symbols-outlined text-[80px] text-danger">trending_down</span>
-                        </div>
-                         <div class="flex items-center gap-2 mb-1">
-                            <p class="text-sm font-medium text-gray-500">本週期支出</p>
-                            <span class="material-symbols-outlined text-[16px] text-gray-300">open_in_new</span>
-                        </div>
-                        <h3 class="text-3xl font-extrabold text-text-main dark:text-white">${formatMoney(stats.expense)}</h3>
-                    </div>
-                    <!-- Balance -->
-                    <div class="bg-white dark:bg-card-dark p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 relative overflow-hidden group">
-                        <div class="absolute right-0 top-0 p-4 opacity-5 group-hover:scale-110 transition-transform">
-                            <span class="material-symbols-outlined text-[80px] text-primary">account_balance_wallet</span>
-                        </div>
-                        <p class="text-sm font-medium text-gray-500 mb-1">週期結餘</p>
-                        <h3 class="text-3xl font-extrabold ${stats.balance >= 0 ? 'text-primary' : 'text-danger'}">${formatMoney(stats.balance)}</h3>
-                    </div>
-                </div>
-
-                <!-- Expanded Budget Section (No Recent Transactions) -->
-                <div class="bg-white dark:bg-card-dark rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-8">
-                    <div class="flex justify-between items-center mb-6">
-                        <h3 class="font-bold text-lg text-text-main dark:text-white flex items-center gap-2">
-                            <span class="material-symbols-outlined text-primary">pie_chart</span>
-                            預算執行狀況
-                        </h3>
-                        <button onclick="switchView('budgets')" class="text-primary text-sm font-bold hover:underline">管理預算</button>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8">
-                        ${renderBudgetBars(cycle)}
-                    </div>
-                </div>
-            `;
-            container.innerHTML = html;
-        }
-
-        function renderBudgetBars(range) {
-            if (appData.budgets.length === 0) return '<p class="col-span-full text-gray-400 text-sm text-center py-4">尚未設定預算</p>';
-            
-            // If range is not provided (e.g. from Budget View), calculate for current cycle
-            if (!range) range = getCycleRange(new Date());
-
-            return appData.budgets.map(b => {
-                const spent = getBudgetProgress(b.category, range);
-                const percent = Math.min(100, Math.round((spent / b.limit) * 100));
-                const isOver = spent > b.limit;
-                const colorClass = isOver || percent > 90 ? 'bg-danger' : 'bg-primary';
-                const textClass = isOver || percent > 90 ? 'text-danger' : 'text-primary';
-                
-                return `
-                <div class="flex flex-col gap-2">
-                    <div class="flex justify-between items-end">
-                        <div class="flex items-center gap-2">
-                            <span class="font-bold text-gray-700 dark:text-gray-200">${b.category}</span>
-                        </div>
-                        <div class="text-right">
-                            <span class="text-sm font-bold ${textClass}">${percent}%</span>
-                        </div>
-                    </div>
-                    <div class="h-3 w-full bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                        <div class="h-full ${colorClass} transition-all duration-500" style="width: ${percent}%"></div>
-                    </div>
-                    <div class="flex justify-between text-xs text-gray-400">
-                        <span>已用 ${formatMoney(spent)}</span>
-                        <span>上限 ${formatMoney(b.limit)}</span>
-                    </div>
-                </div>
-                `;
-            }).join('');
-        }
-
-        function renderTransactions(container) {
-            // Apply Filters (Global Filter State)
-            let filteredTx = appData.transactions.filter(tx => {
-                let pass = true;
-                
-                // Type filter
-                if (transactionFilter.type !== 'all' && tx.type !== transactionFilter.type) pass = false;
-                
-                // Date Range filter
-                if (transactionFilter.start && transactionFilter.end) {
-                    const txDate = new Date(tx.date);
-                    txDate.setHours(12,0,0,0);
-                    if (txDate < transactionFilter.start || txDate > transactionFilter.end) pass = false;
+                    for (const customer of targets) {
+                        setExportTargetCustomer(customer);
+                        await new Promise(r => setTimeout(r, 200));
+                        
+                        const element = document.getElementById('hidden-receipt-container');
+                        if (element) {
+                            const canvas = await html2canvas(element, { useCORS: true, backgroundColor: '#FCF4E9', scale: 2 });
+                            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+                            zip.file(`${customer.name}_訂單明細.png`, blob);
+                        }
+                    }
+                    
+                    const content = await zip.generateAsync({type: "blob"});
+                    saveAs(content, `CuiboWMS_Receipts_${new Date().toISOString().slice(0,10)}.zip`);
+                    notify("批次匯出完成");
+                    setBatchSelection(new Set());
+                    setIsBatchMode(false);
+                } catch (err) {
+                    console.error(err);
+                    notify("匯出失敗");
+                } finally {
+                    setExportTargetCustomer(null);
+                    setIsProcessingBatch(false);
                 }
-                
-                return pass;
-            });
-
-            // Group by Date
-            const groups = {};
-            filteredTx.forEach(tx => {
-                if (!groups[tx.date]) groups[tx.date] = [];
-                groups[tx.date].push(tx);
-            });
+            };
             
-            const sortedDates = Object.keys(groups).sort((a, b) => new Date(b) - new Date(a));
+            const handleClearData = () => {
+                if (confirm("⚠️ 警告：您確定要清除所有資料嗎？\n\n此操作將清空所有商品與訂單，讓您重新開始。\n請務必確認您已備份！")) {
+                    setProducts([]);
+                    setOrders([]);
+                    notify("系統資料已全部清除");
+                }
+            };
+
+            const navigateTo = (tab) => { setActiveTab(tab); setSearchQuery(''); };
             
-            let listHtml = sortedDates.map(date => {
-                const dayTotal = groups[date].reduce((acc, tx) => {
-                    if (tx.type === 'income') return acc + parseFloat(tx.amount);
-                    if (tx.type === 'expense') return acc - parseFloat(tx.amount);
-                    return acc;
-                }, 0);
+            const handleProxyProductChange = (e) => { 
+                const name = e.target.value; 
+                const existing = products.find(p => p.name === name); 
+                setProxyForm(prev => ({ 
+                    ...prev, 
+                    productName: name, 
+                    price: existing ? existing.price : prev.price 
+                })); 
+            };
 
-                const items = groups[date].map(tx => {
-                     const isExpense = tx.type === 'expense';
-                     const color = isExpense ? 'text-danger' : (tx.type === 'income' ? 'text-success' : 'text-gray-500');
-                     const sign = isExpense ? '-' : (tx.type === 'income' ? '+' : '');
-                     const accName = appData.accounts.find(a => a.id === tx.accountId)?.name || '未知帳戶';
-                     
-                     return `
-                        <div class="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-white/5 border-b border-gray-100 dark:border-gray-800 last:border-0 transition-colors">
-                            <div class="flex items-center gap-4">
-                                <div class="size-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600">
-                                    <span class="material-symbols-outlined">${tx.type === 'transfer' ? 'sync_alt' : 'receipt'}</span>
-                                </div>
-                                <div>
-                                    <p class="font-bold text-text-main dark:text-white">${tx.note || tx.category}</p>
-                                    <p class="text-xs text-gray-500">${accName} ${tx.toAccountId ? '-> ' + (appData.accounts.find(a => a.id === tx.toAccountId)?.name) : ''}</p>
-                                </div>
-                            </div>
-                            <div class="text-right">
-                                <p class="font-bold ${color}">${sign}${formatMoney(tx.amount)}</p>
-                                <button onclick="deleteTransaction('${tx.id}')" class="text-xs text-red-400 hover:text-red-600 underline">刪除</button>
-                            </div>
-                        </div>
-                     `;
-                }).join('');
-
-                return `
-                    <div class="mb-6">
-                        <div class="flex justify-between items-center px-2 mb-2">
-                            <h4 class="font-bold text-gray-500 dark:text-gray-400">${date}</h4>
-                            <span class="text-xs font-bold ${dayTotal >= 0 ? 'text-success' : 'text-danger'}">單日: ${formatMoney(dayTotal)}</span>
-                        </div>
-                        <div class="bg-white dark:bg-card-dark rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
-                            ${items}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            if (filteredTx.length === 0) listHtml = `<div class="flex flex-col items-center justify-center h-64 text-gray-400"><span class="material-symbols-outlined text-4xl mb-2">filter_alt_off</span><p>此條件下無交易紀錄</p></div>`;
-
-            // Filter status text
-            let filterStatus = "顯示所有交易";
-            if (transactionFilter.type !== 'all' || transactionFilter.start) {
-                const typeMap = { 'income': '收入', 'expense': '支出', 'transfer': '轉帳', 'all': '所有' };
-                filterStatus = `篩選中: ${typeMap[transactionFilter.type]} ${transactionFilter.displayRange ? '('+transactionFilter.displayRange+')' : ''}`;
-            }
-
-            container.innerHTML = `
-                <div class="max-w-3xl mx-auto">
-                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                        <div class="bg-primary/10 text-primary px-3 py-1 rounded-lg text-sm font-bold">
-                            ${filterStatus}
-                        </div>
-                         <div class="flex items-center gap-2">
-                             ${transactionFilter.start ? `<button onclick="switchView('transactions', true)" class="text-xs bg-gray-200 dark:bg-gray-700 px-3 py-1.5 rounded-full hover:bg-gray-300">清除篩選</button>` : ''}
-                        </div>
-                    </div>
-                    ${listHtml}
-                </div>
-            `;
-        }
-
-        function renderBudgets(container) {
-            container.innerHTML = `
-                <div class="max-w-3xl mx-auto">
-                    <div class="bg-white dark:bg-card-dark rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-8 text-center mb-6">
-                        <h3 class="text-2xl font-bold text-primary mb-2">預算管理</h3>
-                        <p class="text-gray-500">設定每月各類別的支出上限，精準控管金流。</p>
-                    </div>
-                    <div class="bg-white dark:bg-card-dark rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-6 space-y-8">
-                        ${renderBudgetBars()}
-                    </div>
-                </div>
-            `;
-        }
-
-        function renderAccounts(container) {
-            const items = appData.accounts.map(acc => `
-                <div class="bg-white dark:bg-card-dark p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 flex items-center justify-between">
-                    <div class="flex items-center gap-4">
-                        <div class="size-12 rounded-xl ${acc.color || 'bg-gray-100'} flex items-center justify-center">
-                            <span class="material-symbols-outlined text-xl">account_balance</span>
-                        </div>
-                        <div>
-                            <h4 class="font-bold text-lg text-text-main dark:text-white">${acc.name}</h4>
-                            <p class="text-xs text-gray-400 uppercase tracking-wider">${acc.type === 'credit' ? '信用卡' : '資產帳戶'}</p>
-                        </div>
-                    </div>
-                    <div class="text-right">
-                        <p class="text-xl font-bold ${acc.balance < 0 ? 'text-danger' : 'text-primary'}">${formatMoney(acc.balance)}</p>
-                    </div>
-                </div>
-            `).join('');
-
-            container.innerHTML = `
-                <div class="max-w-4xl mx-auto grid grid-cols-1 gap-4">
-                    ${items}
-                    <button class="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-2xl p-6 flex items-center justify-center text-gray-400 font-bold hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                        + 新增帳戶 (功能開發中)
-                    </button>
-                </div>
-            `;
-        }
-
-
-        // --- Calculator & Modal Logic ---
-        let calcValue = "0";
-        let calcOp = null;
-        let prevCalcValue = null;
-        let activeTxType = 'expense'; // expense, income, transfer
-
-        function openModal() {
-            // Set Date to Today
-            document.getElementById('input-date').valueAsDate = new Date();
-            
-            // Populate Categories
-            updateCategoryOptions();
-
-            // Populate Accounts
-            updateAccountOptions();
-            
-            // Reset Calc
-            calcValue = "0";
-            updateCalcDisplay();
-
-            // Reset Fields
-            document.getElementById('input-note').value = '';
-            document.getElementById('input-recurring').checked = false;
-
-            setTxType('expense');
-
-            document.getElementById('transaction-modal').classList.remove('hidden');
-        }
-
-        function closeModal() {
-            document.getElementById('transaction-modal').classList.add('hidden');
-        }
-
-        function setTxType(type) {
-            activeTxType = type;
-            
-            // Button Styles
-            const resetBtn = "flex-1 py-2 rounded-lg text-sm font-bold text-gray-500 transition-all bg-transparent shadow-none";
-            const activeClass = "flex-1 py-2 rounded-lg text-sm font-bold transition-all bg-white dark:bg-gray-700 shadow-sm";
-            
-            document.getElementById('btn-type-expense').className = resetBtn;
-            document.getElementById('btn-type-income').className = resetBtn;
-            document.getElementById('btn-type-transfer').className = resetBtn;
-
-            const activeBtn = document.getElementById(`btn-type-${type}`);
-            activeBtn.className = activeClass;
-            
-            if(type === 'expense') activeBtn.classList.add('text-danger');
-            if(type === 'income') activeBtn.classList.add('text-success');
-            if(type === 'transfer') activeBtn.classList.add('text-primary');
-
-            // Toggle Fields
-            if (type === 'transfer') {
-                document.getElementById('field-category').classList.add('hidden');
-                document.getElementById('field-acc-to').classList.remove('hidden');
-                document.getElementById('label-acc-from').innerText = "轉出帳戶";
-            } else {
-                document.getElementById('field-category').classList.remove('hidden');
-                document.getElementById('field-acc-to').classList.add('hidden');
-                document.getElementById('label-acc-from').innerText = "帳戶";
-                updateCategoryOptions();
-            }
-        }
-
-        function updateCategoryOptions() {
-            const select = document.getElementById('input-category');
-            select.innerHTML = '';
-            const cats = activeTxType === 'income' ? appData.categories.income : appData.categories.expense;
-            cats.forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c;
-                opt.text = c;
-                select.appendChild(opt);
-            });
-        }
-
-        function updateAccountOptions() {
-            const fill = (id) => {
-                const select = document.getElementById(id);
-                select.innerHTML = '';
-                appData.accounts.forEach(a => {
-                    const opt = document.createElement('option');
-                    opt.value = a.id;
-                    opt.text = `${a.name} (${formatMoney(a.balance)})`;
-                    select.appendChild(opt);
+            const handleProxyVariantChange = (e) => {
+                const variant = e.target.value;
+                setProxyForm(prev => {
+                    const existing = products.find(p => p.name === prev.productName && p.variant === variant);
+                    return {
+                        ...prev,
+                        variant: variant,
+                        price: existing ? existing.price : prev.price
+                    };
                 });
             };
-            fill('input-account');
-            fill('input-account-to');
-        }
 
-        // Calculator Logic
-        function calcInput(key) {
-            if (['+', '-', '*', '/'].includes(key)) {
-                // Operator
-                if (prevCalcValue !== null && calcOp) {
-                    // Execute pending
-                    calcValue = eval(`${prevCalcValue} ${calcOp} ${calcValue}`).toString();
-                }
-                prevCalcValue = calcValue;
-                calcOp = key;
-                calcValue = "0"; // Reset for next number
-            } else {
-                // Number
-                if (calcValue === "0" && key !== '.') calcValue = key;
-                else calcValue += key;
-            }
-            updateCalcDisplay();
-        }
-
-        function calcClear() {
-            calcValue = "0";
-            prevCalcValue = null;
-            calcOp = null;
-            updateCalcDisplay();
-        }
-
-        function calcBackspace() {
-            calcValue = calcValue.slice(0, -1);
-            if (calcValue === "") calcValue = "0";
-            updateCalcDisplay();
-        }
-
-        function updateCalcDisplay() {
-            let display = calcValue;
-            if (prevCalcValue && calcOp) {
-                // Show intermediate state if desired, but for now just show current input
-            }
-            document.getElementById('input-amount').value = display;
-        }
-
-        function submitTransaction() {
-            // Final calculation check
-            let finalAmount = calcValue;
-            if (prevCalcValue && calcOp) {
-                try {
-                    finalAmount = eval(`${prevCalcValue} ${calcOp} ${calcValue}`);
-                } catch(e) {
-                    finalAmount = calcValue;
-                }
-            }
-
-            if (parseFloat(finalAmount) === 0) {
-                alert("金額不能為 0");
-                return;
-            }
-
-            const tx = {
-                date: document.getElementById('input-date').value,
-                type: activeTxType,
-                amount: parseFloat(finalAmount),
-                accountId: document.getElementById('input-account').value,
-                note: document.getElementById('input-note').value,
-                isRecurring: document.getElementById('input-recurring').checked
+            const handleUpdateOrderQty = (oid, pid, v) => { const q = parseInt(v); if(isNaN(q)) return; setOrders(prev => prev.map(o => o.id===oid ? {...o, items: o.items.map(i=>i.productId===pid?{...i,qty:q}:i).filter(i=>i.qty>0)} : o).filter(o=>o.items.length>0)); setEditingOrderQtyId(null); };
+            const handleUpdateAllocatedQty = (oid, pid, v) => { const q = parseInt(v); if(isNaN(q)) return; const order = orders.find(o=>o.id===oid); const item = order.items.find(i=>i.productId===pid); if(q>item.qty){ notify("不可大於喊單"); return; } const diff = q - (item.allocatedQty||0); setOrders(prev=>prev.map(o=>o.id===oid?{...o,items:o.items.map(i=>i.productId===pid?{...i,allocatedQty:q}:i)}:o)); setProducts(prev=>prev.map(p=>p.id===pid?{...p,spot:(p.spot||0)-diff}:p)); setEditingAllocatedQtyId(null); };
+            const handleUpdatePurchaseQty = (pid, v) => { const q = parseInt(v); if(isNaN(q)) return; const p = productsWithStats.find(x=>x.id===pid); if(p){ const newSpot = p.allocated - p.confirmed - q; setProducts(prev=>prev.map(x=>x.id===pid?{...x,spot:newSpot}:x)); setEditingPurchaseQtyId(null); } };
+            const handleDeleteOrderItem = (oid, pid) => { if(confirm("刪除?")) { const order = orders.find(o=>o.id===oid); const item = order.items.find(i=>i.productId===pid); if(item?.allocatedQty>0){ setProducts(prev=>prev.map(p=>p.id===pid?{...p,spot:(p.spot||0)+item.allocatedQty}:p)); } setOrders(prev=>prev.map(o=>o.id===oid?{...o,items:o.items.filter(i=>i.productId!==pid)}:o).filter(o=>o.items.length>0)); } };
+            
+            const handleUpdateProductInfo = (pid, f, v) => { 
+                const val = parseInt(v); 
+                if(isNaN(val)) return; 
+                const t = products.find(p=>p.id===pid); 
+                setProducts(prev=>prev.map(p=> 
+                    (f.startsWith('tier') && p.name===t.name) || p.id===pid ? {...p, [f]:val} : p
+                )); 
             };
+            
+            const handleDeleteProduct = (pid) => { if(confirm("刪除款式?")) setProducts(prev=>prev.filter(p=>p.id!==pid)); };
+            const toggleAllocation = (oid, pid, curr, total) => { const next = curr >= total ? 0 : total; const diff = next - curr; const p = products.find(x=>x.id===pid); if(diff>0&&(p.spot||0)<diff) notify("現貨不足"); setOrders(prev=>prev.map(o=>o.id===oid?{...o,items:o.items.map(i=>i.productId===pid?{...i,allocatedQty:next}:i)}:o)); setProducts(prev=>prev.map(p=>p.id===pid?{...p,spot:(p.spot||0)-diff}:p)); };
+            const handleShipCustomer = (name) => { if(confirm("確認出貨?")) { setOrders(prev=>prev.map(o=>o.customer===name&&o.status!=='已出貨'?{...o,status:'已出貨'}:o)); setSelectedArrivalCustomer(null); } };
+            const handleUnshipCustomer = (name) => { if(confirm("回復未出貨?")) { setOrders(prev=>prev.map(o=>o.customer===name&&o.status==='已出貨'?{...o,status:'待結單'}:o)); setSelectedArrivalCustomer(null); } };
+            const handleAddOrder = () => { const { productName, variant, price, customer, qty, purchasedQty } = proxyForm; if (!productName || !price) { notify('請填寫完整'); return; } const q = parseInt(qty)||1; const pq = parseInt(purchasedQty)||0; const fp = parseInt(price)||0; let target = products.find(p=>p.name===productName && p.variant===variant); let pid = target?.id; if(!target) { pid = Date.now().toString(); setProducts(prev=>[...prev, {id:pid, name:productName, variant:variant||'單一款式', price:fp, spot:pq, tierMinQty:0, tierPrice:0}]); } else if(pq>0) { setProducts(prev=>prev.map(p=>p.id===pid?{...p,spot:(p.spot||0)+pq}:p)); } if(customer) { setOrders(prev=>[...prev, { id: Date.now().toString()+Math.random(), customer, total:fp*q, paid:0, status:'待結單', items:[{productId:pid, name:productName, variant:variant||'單一款式', qty:q, price:fp, allocatedQty:0}], debt:0, unclaimed:0 }]); notify("已加單"); } else { notify("已入庫"); } setShowProxyOrder(false); setProxyForm({ productName: '', variant: '', price: '', customer: '', qty: 1, purchasedQty: 0 }); };
+            
+            const handleCloudUpload = async () => { if(!apiUrl) { notify("請設定API"); return; } setIsSyncing(true); try { await fetch(apiUrl, { method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'}, body:JSON.stringify({products,orders}) }); notify("上傳成功"); } catch(e) { notify("上傳失敗"); } finally { setIsSyncing(false); } };
+            const handleCloudDownload = async () => { if(!apiUrl) { notify("請設定API"); return; } setIsSyncing(true); try { const res = await fetch(apiUrl); const data = await res.json(); if(data.products){ if(confirm("覆蓋資料?")){ setProducts(data.products); setOrders(data.orders); notify("下載成功"); } } } catch(e) { notify("下載失敗"); } finally { setIsSyncing(false); } };
+            
+            const currentSelectedCustomer = selectedCustomerDetail ? customerList.find(c => c.name === selectedCustomerDetail.name) : null;
+            const currentSelectedArrivalCustomer = selectedArrivalCustomer ? (selectedArrivalCustomer.source === 'shipped' ? shippedArrivals.find(c => c.name === selectedArrivalCustomer.name) : pendingArrivals.find(c => c.name === selectedArrivalCustomer.name)) || selectedArrivalCustomer : null;
+            const isArrivalShipped = currentSelectedArrivalCustomer && !orders.some(o => o.customer === currentSelectedArrivalCustomer.name && o.status !== '已出貨');
 
-            if (activeTxType === 'transfer') {
-                tx.toAccountId = document.getElementById('input-account-to').value;
-                if (tx.accountId === tx.toAccountId) {
-                    alert("轉出與轉入帳戶不能相同");
-                    return;
-                }
-                tx.category = '轉帳';
-            } else {
-                tx.category = document.getElementById('input-category').value;
-            }
+            // --- 介面渲染 (Render) ---
+            return (
+                <div className="min-h-screen pb-24">
+                    {/* 隱藏的匯出用收據 (Hidden Receipt for Image Generation) */}
+                    {exportTargetCustomer && (
+                        <div id="hidden-receipt-container">
+                            <div className="receipt-card">
+                                <div className="receipt-header">
+                                    <div className="receipt-title">{exportTargetCustomer.name} 的購物清單</div>
+                                    <div className="receipt-subtitle">{new Date().toLocaleString()}</div>
+                                </div>
+                                <div className="receipt-info">
+                                    <span>訂單編號: {Date.now().toString().slice(-6)}</span>
+                                    <span>客戶: {exportTargetCustomer.name}</span>
+                                </div>
+                                <table className="receipt-table">
+                                    <thead>
+                                        <tr>
+                                            <th className="col-name">商品 / 規格</th>
+                                            <th className="col-price">單價</th>
+                                            <th className="col-qty">數量</th>
+                                            <th className="col-total">小計</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {exportTargetCustomer.items.map((item, idx) => (
+                                            <tr key={idx}>
+                                                <td className="col-name">
+                                                    <span className="item-name">{item.name}</span>
+                                                    <span className="item-spec">{item.variant}</span>
+                                                </td>
+                                                <td className="col-price">${item.finalPrice}</td>
+                                                <td className="col-qty">{item.qty}</td>
+                                                <td className="col-total">${item.itemTotal}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                <div className="receipt-summary">
+                                    <div className="summary-row flex justify-between text-sm mb-1">
+                                        <span>項目總數:</span>
+                                        <span>{exportTargetCustomer.items.length} 項</span>
+                                    </div>
+                                    <div className="summary-total">
+                                        <span>總金額:</span>
+                                        <span>${exportTargetCustomer.totalSpent.toLocaleString()}</span>
+                                    </div>
+                                </div>
+                                <div className="receipt-footer">
+                                    感謝您的購買！請於期限內完成匯款。
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
-            addTransaction(tx);
-            closeModal();
-            updateUI();
-        }
+                    {/* 通知 Toast */}
+                    {notification && <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[300] bg-latte-800 text-cream-50 px-6 py-3 rounded-2xl shadow-xl flex items-center gap-2 animate-bounce border border-latte-600"><CheckCircle2 size={18} className="text-cream-200" />{notification}</div>}
 
-        // Init App
-        window.onload = function() {
-            updateUI();
-        }
+                    {/* Header (頂部標題) */}
+                    <div className="bg-latte-500 text-cream-50 p-4 shadow-sm sticky top-0 z-50 flex justify-between items-center max-w-2xl mx-auto shadow-latte-200">
+                        <h1 className="text-xl font-bold flex items-center gap-2 cursor-pointer" onClick={() => navigateTo('dashboard')}><Zap className="fill-cream-100 text-cream-100" /> Cuibo WMS</h1>
+                    </div>
 
+                    {/* Nav (分頁導航) */}
+                    <div className="bg-white/90 backdrop-blur-sm border-b border-cream-200 sticky top-[60px] z-40">
+                         <div className="flex max-w-2xl mx-auto overflow-x-auto no-scrollbar">
+                            {[{id:'products',l:'商品列表',i:ShoppingBag},{id:'dashboard',l:'狀態',i:LayoutDashboard},{id:'customers',l:'顧客列表',i:Users},{id:'arrivals',l:'到貨管理',i:BoxSelect}].map(t => (
+                                <button key={t.id} onClick={() => {setActiveTab(t.id); setSearchQuery('')}} className={`flex-1 py-4 px-2 flex flex-col items-center gap-1 text-[11px] font-bold transition-all ${activeTab === t.id ? 'text-latte-500 border-b-2 border-latte-500 bg-cream-50' : 'text-latte-300'}`}><t.i size={20}/>{t.l}</button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Main Content (主要內容區) */}
+                    <main className="max-w-2xl mx-auto p-4 space-y-5">
+                        {/* 搜尋列 */}
+                        {activeTab !== 'dashboard' && <div className="relative"><input type="text" placeholder="搜尋商品、顧客..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-cream-50 text-latte-800 rounded-2xl p-4 pl-12 shadow-inner-soft outline-none border border-transparent focus:border-latte-300 transition-all placeholder:text-latte-300" /><Search size={18} className="absolute left-4 top-4 text-latte-300" /></div>}
+                        
+                        {/* 側邊工具列 (Sidebar Backup Buttons) - 保持指定顏色但優化外觀 */}
+                        <div className="flex gap-2 overflow-x-auto pb-2 px-1 scrollbar-hide">
+                             <button onClick={()=>setShowSettings(true)} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm active:scale-95 transition-transform"><Settings size={14}/> API 設定</button>
+                             <button onClick={handleCloudUpload} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm shadow-indigo-200 active:scale-95 transition-transform"><Cloud size={14}/> 上傳雲端</button>
+                             <button onClick={handleCloudDownload} className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm shadow-emerald-200 active:scale-95 transition-transform"><Download size={14}/> 雲端同步</button>
+                             <div className="w-px bg-latte-300 mx-1 shrink-0 h-6 self-center opacity-50"></div>
+                             <button onClick={handleExportBackup} className="bg-slate-700 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm active:scale-95 transition-transform"><Download size={14}/> 備份檔案</button>
+                             <label className="bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs flex items-center gap-1 cursor-pointer shrink-0 font-bold shadow-sm active:scale-95 transition-transform">
+                                <Upload size={14}/> 還原檔案
+                                <input type="file" ref={fileInputRef} onChange={handleImportBackup} accept=".json" className="hidden" />
+                             </label>
+                             <div className="w-px bg-latte-300 mx-1 shrink-0 h-6 self-center opacity-50"></div>
+                             <button onClick={handleClearData} className="bg-rose-600 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm shadow-rose-200 active:scale-95 transition-transform"><Trash2 size={14}/> 清除重置</button>
+                        </div>
+
+                        {/* Products List */}
+                        {activeTab === 'products' && filteredGroupedProducts.map(g => (
+                            <div key={g.name} onClick={() => setSelectedGroupName(g.name)} className="bg-white rounded-3xl p-5 shadow-soft border border-cream-200 flex justify-between items-center cursor-pointer active:scale-[0.99] transition-all hover:border-latte-200">
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-latte-800 text-lg mb-2">{g.name}</h4>
+                                    <div className="flex gap-2 text-xs text-latte-600 font-bold flex-wrap">
+                                        <span className="bg-cream-100 px-2.5 py-1 rounded-lg border border-cream-200 text-latte-500">喊 {g.totalAllocated}</span>
+                                        <span className="bg-cream-100 px-2.5 py-1 rounded-lg border border-cream-200 text-latte-500">配 {g.totalConfirmed}</span>
+                                        <span className="bg-cream-100 px-2.5 py-1 rounded-lg border border-cream-200 text-latte-500">現 {g.totalSpot}</span>
+                                        {/* 顯示優惠標籤 */}
+                                        {products.find(p => p.name === g.name)?.tierMinQty > 0 && products.find(p => p.name === g.name)?.tierPrice > 0 && (
+                                            <span className="bg-[#AEC8DB] text-white px-2.5 py-1 rounded-lg border border-[#AEC8DB]">
+                                                {products.find(p => p.name === g.name).tierMinQty}件${products.find(p => p.name === g.name).tierPrice}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="w-10 h-10 rounded-full bg-cream-50 flex items-center justify-center text-latte-300"><ChevronRight size={20} /></div>
+                            </div>
+                        ))}
+
+                        {/* Dashboard */}
+                        {activeTab === 'dashboard' && (
+                            <div className="grid grid-cols-2 gap-4 animate-in">
+                                <div onClick={() => setShowPurchaseList(true)} className="bg-[#D98E73] text-white p-6 rounded-3xl shadow-lg shadow-[#D98E73]/30 relative overflow-hidden cursor-pointer group transition-transform active:scale-95">
+                                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><ShoppingCart size={80}/></div>
+                                    <p className="text-xs font-bold opacity-90 tracking-wider">需補貨</p>
+                                    <p className="text-4xl font-black mt-2">{stats.totalShortageQty} <span className="text-sm font-normal opacity-80">件</span></p>
+                                </div>
+                                <div onClick={() => setShowRevenueList(true)} className="bg-[#BF9E85] text-white p-6 rounded-3xl shadow-lg shadow-[#BF9E85]/30 relative overflow-hidden cursor-pointer group transition-transform active:scale-95">
+                                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><DollarSign size={80}/></div>
+                                    <p className="text-xs font-bold opacity-90 tracking-wider">總營業額</p>
+                                    <p className="text-4xl font-black mt-2"><span className="text-lg opacity-80">$</span>{stats.totalRevenue.toLocaleString()}</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Customers List with Batch Selection */}
+                        {activeTab === 'customers' && (
+                            <div className="space-y-2">
+                                {/* 批次模式開關與標題 */}
+                                <div className="flex justify-between items-center px-1 mb-2">
+                                    <span className="text-xs font-bold text-latte-400">共 {filteredCustomers.length} 位顧客</span>
+                                     <button onClick={() => { setIsBatchMode(!isBatchMode); setBatchSelection(new Set()); }} className={`text-xs px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 transition-colors ${isBatchMode ? 'bg-latte-500 text-white shadow-md' : 'bg-cream-100 text-latte-500 hover:bg-cream-200'}`}>
+                                        <ImageIcon size={14}/> {isBatchMode ? '取消選取' : '批次存圖'}
+                                     </button>
+                                </div>
+
+                                {filteredCustomers.map(c => (
+                                    <div key={c.name} 
+                                        onClick={() => {
+                                            if (isBatchMode) {
+                                                const newSet = new Set(batchSelection);
+                                                if (newSet.has(c.name)) newSet.delete(c.name);
+                                                else newSet.add(c.name);
+                                                setBatchSelection(newSet);
+                                            } else {
+                                                setSelectedCustomerDetail(c);
+                                            }
+                                        }} 
+                                        className={`bg-white rounded-3xl p-5 shadow-soft border border-cream-200 flex justify-between items-center cursor-pointer mb-2 active:scale-[0.99] transition-all hover:border-latte-200 ${isBatchMode && batchSelection.has(c.name) ? 'ring-2 ring-latte-500 ring-offset-2' : ''}`}
+                                    >
+                                        <div className="flex items-center gap-4">
+                                            {/* 批次選取勾選框 */}
+                                            {isBatchMode && (
+                                                <div className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-colors ${batchSelection.has(c.name) ? 'bg-latte-500 border-latte-500 text-white' : 'border-cream-300 bg-cream-50'}`}>
+                                                    {batchSelection.has(c.name) && <CheckSquare size={16}/>}
+                                                </div>
+                                            )}
+                                            <div className="w-12 h-12 bg-cream-100 text-latte-600 rounded-full flex items-center justify-center font-bold border border-cream-200 text-lg shadow-sm">{c.name[0]}</div>
+                                            <h4 className="font-bold text-latte-800 text-lg">{c.name}</h4>
+                                        </div>
+                                        <p className="font-black text-latte-500 text-lg">${c.totalSpent.toLocaleString()}</p>
+                                    </div>
+                                ))}
+
+                                {/* 批次操作懸浮列 */}
+                                {isBatchMode && (
+                                    <div className="fixed bottom-24 left-0 right-0 flex justify-center z-[90] animate-in pointer-events-none">
+                                        <div className="bg-white/95 backdrop-blur border border-cream-200 shadow-xl rounded-full pl-6 pr-2 py-2 flex gap-4 items-center pointer-events-auto">
+                                            <span className="font-bold text-latte-800 text-sm whitespace-nowrap">已選 {batchSelection.size} 位</span>
+                                            <div className="flex gap-1">
+                                                 <button onClick={() => setBatchSelection(new Set(filteredCustomers.map(c => c.name)))} className="px-3 py-1.5 text-xs font-bold text-latte-500 hover:bg-cream-100 rounded-lg transition-colors">全選</button>
+                                                 <button onClick={handleBatchExportImages} disabled={batchSelection.size === 0 || isProcessingBatch} className="bg-[#AEC8DB] text-white px-4 py-1.5 rounded-xl font-bold text-xs shadow-sm shadow-[#AEC8DB]/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 hover:brightness-105 active:scale-95 transition-all">
+                                                    {isProcessingBatch ? <Loader2 className="animate-spin" size={14}/> : <Download size={14}/>} 下載圖片
+                                                 </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Arrivals List */}
+                        {activeTab === 'arrivals' && (
+                            <div className="space-y-6 pb-24">
+                                <div>
+                                    <h3 className="text-lg font-black text-latte-800 mb-4 px-2 flex gap-2 items-center"><BoxSelect size={20} className="text-latte-500"/> 待出貨 / 到貨中</h3>
+                                    {filteredPendingArrivals.map(c => (
+                                        <div key={c.name} onClick={() => setSelectedArrivalCustomer({...c, source: 'pending'})} className="bg-white rounded-3xl shadow-soft border border-cream-200 p-5 mb-3 flex justify-between items-center cursor-pointer relative overflow-hidden active:scale-[0.99] transition-all">
+                                            {c.isFullyArrived && <div className="absolute left-0 top-0 bottom-0 w-2 bg-emerald-400"></div>}
+                                            <div className="flex items-center gap-4">
+                                                <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg shadow-sm border border-transparent ${c.isFullyArrived ? 'bg-emerald-100 text-emerald-600 border-emerald-200' : 'bg-cream-100 text-latte-300'}`}>{c.name[0]}</div>
+                                                <div>
+                                                    <h4 className="font-bold text-latte-800 flex gap-2 items-center text-lg">{c.name} {c.isFullyArrived && <span className="text-[10px] bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-200">全到</span>}</h4>
+                                                    <p className="text-xs text-latte-400 mt-1 font-bold">共 {c.totalQty} 件 · 已配 {c.allocatedQty}</p>
+                                                </div>
+                                            </div>
+                                            {c.isFullyArrived && <button onClick={(e) => { e.stopPropagation(); handleShipCustomer(c.name); }} className="bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1 shadow-md shadow-emerald-200 animate-pulse hover:scale-105 transition-transform"><Truck size={16}/> 確認出貨</button>}
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="opacity-70 grayscale-[0.5]">
+                                    <h3 className="text-lg font-black text-latte-400 mb-4 px-2 flex gap-2 items-center"><PackageCheck size={20}/> 已出貨紀錄</h3>
+                                    {filteredShippedArrivals.map(c => (
+                                        <div key={c.name} onClick={() => setSelectedArrivalCustomer({...c, source: 'shipped'})} className="bg-cream-50 rounded-3xl p-4 border border-cream-200 mb-3 flex justify-between items-center cursor-pointer">
+                                            <span className="font-bold text-latte-600">{c.name}</span>
+                                            <span className="text-xs bg-latte-200 text-latte-600 px-3 py-1 rounded-full font-bold">已出貨</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* FAB (懸浮新增按鈕) */}
+                    <div className="fixed bottom-8 right-6 z-[100]"><button onClick={() => setShowProxyOrder(true)} className="w-16 h-16 bg-[#AEC8DB] text-white rounded-full shadow-2xl shadow-[#AEC8DB]/40 flex items-center justify-center active:scale-95 transition-all hover:brightness-105 hover:-translate-y-1"><Plus size={32}/></button></div>
+
+                    {/* --- Modals (彈出視窗) --- */}
+                    
+                    {/* Settings Modal */}
+                    {showSettings && (
+                        <div className="fixed inset-0 bg-latte-900/40 backdrop-blur-[2px] z-[200] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-3xl w-full max-w-md p-6 space-y-4 shadow-2xl animate-in">
+                                <h3 className="font-bold border-b border-cream-200 pb-3 text-latte-800 text-lg">API 設定</h3>
+                                <p className="text-sm text-latte-500">請輸入 Google Apps Script 網頁應用程式網址</p>
+                                <input type="text" placeholder="https://script.google.com/..." className="w-full bg-cream-50 border border-cream-200 p-4 rounded-xl focus:border-latte-400 outline-none text-latte-800 shadow-inner-soft" value={apiUrl} onChange={e=>setApiUrl(e.target.value)}/>
+                                <div className="flex gap-3 pt-2">
+                                    <button onClick={()=>setShowSettings(false)} className="flex-1 bg-[#AEC8DB] text-white py-3 rounded-xl font-bold shadow-lg shadow-[#AEC8DB]/20 active:scale-95 transition-transform">儲存</button>
+                                    <button onClick={()=>setShowSettings(false)} className="flex-1 bg-cream-100 text-latte-500 py-3 rounded-xl font-bold hover:bg-cream-200 active:scale-95 transition-transform">取消</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Proxy Order Modal (代客加單) */}
+                    {showProxyOrder && (
+                        <div className="fixed inset-0 bg-latte-900/40 backdrop-blur-[2px] z-[200] flex items-end md:items-center justify-center p-4">
+                            <div className="bg-white rounded-[30px] w-full max-w-md p-6 space-y-4 shadow-2xl animate-in">
+                                <h3 className="font-bold border-b border-cream-200 pb-3 text-latte-800 text-lg flex items-center gap-2"><Plus size={20} className="text-[#AEC8DB]"/> 代客加單 / 入庫</h3>
+                                <div className="space-y-3">
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-latte-400 ml-1">商品名稱</label>
+                                        <input placeholder="輸入或選擇商品..." className="w-full bg-cream-50 border border-cream-200 p-3 rounded-xl focus:border-latte-400 outline-none text-latte-800 placeholder:text-latte-300 shadow-inner-soft" list="pl" value={proxyForm.productName} onChange={handleProxyProductChange}/><datalist id="pl">{[...new Set(products.map(p=>p.name))].map(n=><option key={n} value={n}/>)}</datalist>
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <div className="flex-1 space-y-1">
+                                            <label className="text-xs font-bold text-latte-400 ml-1">款式</label>
+                                            <input placeholder="款式" className="w-full bg-cream-50 border border-cream-200 p-3 rounded-xl focus:border-latte-400 outline-none text-latte-800 placeholder:text-latte-300 shadow-inner-soft" list="vl" value={proxyForm.variant} onChange={handleProxyVariantChange}/><datalist id="vl">{availableVariants.map(v=><option key={v} value={v}/>)}</datalist>
+                                        </div>
+                                        <div className="w-24 space-y-1">
+                                            <label className="text-xs font-bold text-latte-400 ml-1">價格</label>
+                                            <input type="number" placeholder="$" className="w-full bg-cream-50 border border-cream-200 p-3 rounded-xl focus:border-latte-400 outline-none text-latte-800 text-center placeholder:text-latte-300 shadow-inner-soft" value={proxyForm.price} onChange={e=>setProxyForm({...proxyForm,price:e.target.value})}/>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <div className="flex-1 space-y-1">
+                                            <label className="text-xs font-bold text-latte-400 ml-1">顧客 (選填)</label>
+                                            <input placeholder="輸入顧客姓名..." className="w-full bg-cream-50 border border-cream-200 p-3 rounded-xl focus:border-latte-400 outline-none text-latte-800 placeholder:text-latte-300 shadow-inner-soft" list="cl" value={proxyForm.customer} onChange={e=>setProxyForm({...proxyForm,customer:e.target.value})}/><datalist id="cl">{customerList.map(c=><option key={c.name} value={c.name}/>)}</datalist>
+                                        </div>
+                                        <div className="w-24 space-y-1">
+                                            <label className="text-xs font-bold text-latte-400 ml-1">數量</label>
+                                            <input type="number" placeholder="數" className="w-full bg-cream-50 border border-cream-200 p-3 rounded-xl focus:border-latte-400 outline-none text-latte-800 text-center placeholder:text-latte-300 shadow-inner-soft" value={proxyForm.qty} onChange={e=>setProxyForm({...proxyForm,qty:e.target.value})}/>
+                                        </div>
+                                    </div>
+                                    <div className="pt-2 border-t border-cream-200 mt-2">
+                                        <label className="text-xs text-latte-500 font-bold ml-1 mb-1 block flex justify-between">同時入庫現貨數量 <span className="text-latte-300 font-normal">若僅入庫不接單，顧客欄留空</span></label>
+                                        <input type="number" placeholder="0" className="w-full bg-latte-50 border border-latte-200 p-3 rounded-xl focus:border-latte-400 outline-none text-latte-800 text-center font-bold" value={proxyForm.purchasedQty} onChange={e=>setProxyForm({...proxyForm,purchasedQty:e.target.value})}/>
+                                    </div>
+                                </div>
+                                <div className="pt-2 flex flex-col gap-2">
+                                    <button onClick={handleAddOrder} className="w-full bg-[#AEC8DB] text-white py-3.5 rounded-xl font-bold shadow-lg shadow-[#AEC8DB]/20 active:scale-95 transition-transform hover:brightness-105">確認新增</button>
+                                    <button onClick={()=>setShowProxyOrder(false)} className="w-full py-2 text-latte-400 text-sm font-bold hover:text-latte-600">取消</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Full Screen Modals (Revenue/Purchase) */}
+                    {showRevenueList && (
+                        <div className="fixed inset-0 bg-latte-900/40 backdrop-blur-[2px] z-[150] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col shadow-2xl animate-in">
+                                <div className="p-5 border-b border-cream-200 flex justify-between items-center bg-cream-50 rounded-t-3xl"><h3 className="font-bold text-latte-800 text-lg flex gap-2 items-center"><DollarSign size={20}/> 營收總覽</h3><button onClick={()=>setShowRevenueList(false)} className="w-8 h-8 rounded-full bg-cream-200 text-latte-500 flex items-center justify-center hover:bg-latte-200"><X size={18}/></button></div>
+                                <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                                    {revenueCustomers.map(c=>
+                                        <div key={c.name} onClick={()=>{setShowRevenueList(false);setSelectedCustomerDetail(c)}} className="flex justify-between p-4 bg-white rounded-2xl items-center cursor-pointer border border-cream-100 shadow-sm hover:border-latte-300 hover:shadow-soft transition-all">
+                                            <span className="font-bold text-latte-800 text-lg">{c.name}</span>
+                                            <span className="font-bold text-latte-600 bg-cream-50 px-3 py-1 rounded-lg border border-cream-200">${c.totalSpent.toLocaleString()}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {showPurchaseList && (
+                        <div className="fixed inset-0 bg-latte-900/40 backdrop-blur-[2px] z-[150] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col shadow-2xl animate-in">
+                                <div className="p-5 border-b border-cream-200 flex justify-between items-center bg-cream-50 rounded-t-3xl"><h3 className="font-bold text-latte-800 text-lg flex gap-2 items-center"><ShoppingCart size={20}/> 採購清單</h3><button onClick={()=>setShowPurchaseList(false)} className="w-8 h-8 rounded-full bg-cream-200 text-latte-500 flex items-center justify-center hover:bg-latte-200"><X size={18}/></button></div>
+                                <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                                    {purchaseList.map(p=>
+                                        <div key={p.id} className="flex justify-between items-center p-4 bg-white rounded-2xl border border-cream-100 shadow-sm">
+                                            <div><div className="font-bold text-latte-800 text-lg">{p.name}</div><div className="text-xs text-latte-400 mt-1 font-bold bg-cream-100 inline-block px-2 py-0.5 rounded">{p.variant}</div></div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-latte-400 font-bold">缺</span>
+                                                {editingPurchaseQtyId===p.id?
+                                                    <input autoFocus className="w-16 border border-latte-300 rounded-lg text-center py-1 text-latte-800 font-bold outline-none bg-cream-50" type="number" defaultValue={p.shortage} onBlur={e=>handleUpdatePurchaseQty(p.id,e.target.value)}/>:
+                                                    <span onClick={()=>setEditingPurchaseQtyId(p.id)} className="text-[#D98E73] font-black text-2xl cursor-pointer hover:bg-cream-50 px-2 rounded transition-colors">{p.shortage}</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Group Detail Modal (商品群組詳情) */}
+                    {selectedGroupName && (
+                        <div className="fixed inset-0 bg-latte-900/40 backdrop-blur-[2px] z-[150] flex items-end md:items-center justify-center p-0 md:p-4">
+                            <div className="bg-white rounded-t-[30px] md:rounded-3xl w-full max-w-md h-[85vh] flex flex-col shadow-2xl animate-in">
+                                <div className="p-6 border-b border-cream-200 flex justify-between items-center bg-cream-50 rounded-t-[30px] md:rounded-t-3xl">
+                                    <h3 className="font-bold text-latte-800 text-xl">{selectedGroupName}</h3>
+                                    <button onClick={()=>setSelectedGroupName(null)} className="w-8 h-8 rounded-full bg-cream-200 text-latte-500 flex items-center justify-center hover:bg-latte-200"><X size={18}/></button>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-5 space-y-6">
+                                    {/* 優惠設定區塊 (僅在編輯模式顯示) */}
+                                    {isEditingProduct && (
+                                        <div className="bg-[#FFFBF5] p-4 rounded-2xl border border-[#EBE0D6] space-y-3">
+                                            <h4 className="font-bold text-[#957E6B] text-sm flex items-center gap-2"><Tag size={16}/> 全系列優惠設定 (同名商品共用)</h4>
+                                            <div className="flex gap-3">
+                                                <div className="flex-1">
+                                                     <label className="text-xs text-[#B5A496] font-bold block mb-1">滿件數 (門檻)</label>
+                                                     <input type="number" className="w-full p-2 rounded-lg border border-cream-200 bg-white text-center font-bold text-latte-800 outline-none focus:border-[#AEC8DB]" placeholder="0" 
+                                                         defaultValue={products.find(p => p.name === selectedGroupName)?.tierMinQty || 0}
+                                                         onBlur={(e) => {
+                                                             const firstP = products.find(p => p.name === selectedGroupName);
+                                                             if(firstP) handleUpdateProductInfo(firstP.id, 'tierMinQty', e.target.value);
+                                                         }}
+                                                     />
+                                                </div>
+                                                <div className="flex-1">
+                                                     <label className="text-xs text-[#B5A496] font-bold block mb-1">優惠單價</label>
+                                                     <input type="number" className="w-full p-2 rounded-lg border border-cream-200 bg-white text-center font-bold text-latte-800 outline-none focus:border-[#AEC8DB]" placeholder="0" 
+                                                         defaultValue={products.find(p => p.name === selectedGroupName)?.tierPrice || 0}
+                                                          onBlur={(e) => {
+                                                             const firstP = products.find(p => p.name === selectedGroupName);
+                                                             if(firstP) handleUpdateProductInfo(firstP.id, 'tierPrice', e.target.value);
+                                                         }}
+                                                     />
+                                                </div>
+                                            </div>
+                                            <p className="text-[10px] text-[#B5A496] flex items-center gap-1"><AlertCircle size={10}/> 設定為 0 代表不啟用優惠。修改任一款式會同步更新。</p>
+                                        </div>
+                                    )}
+
+                                    <div className="bg-cream-50 p-4 rounded-2xl border border-cream-100 shadow-inner-soft">
+                                        <table className="w-full text-xs text-center">
+                                            <thead>
+                                                <tr className="text-latte-400 font-bold border-b border-cream-200">
+                                                    <th className="pb-3 text-left pl-2">款式</th>
+                                                    {isEditingProduct && <th className="pb-3 w-16">單價</th>}
+                                                    <th className="pb-3">已配</th>
+                                                    <th className="pb-3">待配</th>
+                                                    <th className="pb-3">現貨</th>
+                                                    {isEditingProduct&&<th className="pb-3"></th>}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {productsWithStats.filter(p=>p.name===selectedGroupName).map(p=>
+                                                    <tr key={p.id} className="border-b border-cream-100 last:border-0 hover:bg-white/50 transition-colors">
+                                                        <td className="py-3 text-left pl-2 font-bold text-latte-700">
+                                                            <div>{p.variant}</div>
+                                                            {!isEditingProduct && <div className="text-[10px] text-latte-400 font-normal">${p.price}</div>}
+                                                        </td>
+                                                        {isEditingProduct && <td><input className="w-14 text-center border border-latte-200 rounded py-1 bg-white outline-none focus:border-[#AEC8DB]" defaultValue={p.price} onBlur={e=>handleUpdateProductInfo(p.id,'price',e.target.value)}/></td>}
+                                                        <td className="text-latte-500 font-bold">{p.confirmed}</td>
+                                                        <td className="text-[#D98E73] font-bold">{p.pending}</td>
+                                                        <td>{isEditingProduct?<input className="w-10 text-center border border-latte-200 rounded py-1 bg-white outline-none focus:border-[#AEC8DB]" defaultValue={p.spot} onBlur={e=>handleUpdateProductInfo(p.id,'spot',e.target.value)}/>:<span className="font-bold text-latte-800 bg-white px-2 py-1 rounded border border-transparent">{p.spot}</span>}</td>
+                                                        {isEditingProduct&&<td><button onClick={()=>handleDeleteProduct(p.id)} className="text-rose-400 hover:text-rose-600"><Trash2 size={16}/></button></td>}
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div>
+                                        <h4 className="text-xs font-bold text-latte-400 mb-3 ml-1 flex items-center gap-1"><Split size={14}/> 配貨明細 (點擊數量修改)</h4>
+                                        {getGroupAllocations(selectedGroupName).map((r,i)=>
+                                            <div key={i} className={`flex justify-between items-center p-3 rounded-xl mb-2 border transition-all ${r.isAllocated ? 'bg-latte-50 border-latte-200' : 'bg-white border-cream-200 hover:border-latte-200'}`}>
+                                                <div className="flex items-center gap-3">
+                                                    <button onClick={()=>toggleAllocation(r.orderId,r.productId,r.allocatedQty,r.qty)} className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-colors active:scale-90 ${r.isAllocated?'bg-latte-500 border-latte-500 text-white':'border-latte-200 text-transparent hover:border-latte-400'}`}><CheckSquare size={14}/></button>
+                                                    <div><div className="font-bold text-sm text-latte-800">{r.customer}</div><div className="text-[10px] text-latte-400 font-bold">{r.variant}</div></div>
+                                                </div>
+                                                <div className="flex items-center gap-1 text-sm bg-white px-2 py-1 rounded-lg border border-cream-200 shadow-sm">
+                                                    <span className="text-[10px] text-latte-400">配</span>
+                                                    {editingAllocatedQtyId===`${r.orderId}-${r.productId}-detail`?
+                                                        <input autoFocus className="w-8 text-center border-b border-latte-500 outline-none bg-transparent font-bold text-latte-800" defaultValue={r.allocatedQty} onBlur={e=>handleUpdateAllocatedQty(r.orderId,r.productId,e.target.value)}/>:
+                                                        <span onClick={()=>setEditingAllocatedQtyId(`${r.orderId}-${r.productId}-detail`)} className="font-bold text-latte-600 cursor-pointer hover:bg-cream-100 px-1 rounded">{r.allocatedQty}</span>
+                                                    }
+                                                    <span className="text-[10px] text-latte-300">/</span>
+                                                    <span className="text-[10px] text-latte-400">喊</span>
+                                                    {editingOrderQtyId===`${r.orderId}-${r.productId}-detail`?
+                                                        <input autoFocus className="w-8 text-center border-b border-latte-300 outline-none bg-transparent font-bold text-latte-800" defaultValue={r.qty} onBlur={e=>handleUpdateOrderQty(r.orderId,r.productId,e.target.value)}/>:
+                                                        <span onClick={()=>setEditingOrderQtyId(`${r.orderId}-${r.productId}-detail`)} className="font-bold text-latte-800 cursor-pointer hover:bg-cream-100 px-1 rounded">{r.qty}</span>
+                                                    }
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="p-4 border-t border-cream-200 flex justify-between bg-white rounded-b-[30px] md:rounded-b-3xl">
+                                    <button onClick={()=>{setProxyForm(prev=>({...prev,productName:selectedGroupName}));setShowProxyOrder(true)}} className="text-sm bg-cream-100 text-latte-600 font-bold px-4 py-3 rounded-xl flex gap-2 items-center hover:bg-cream-200 transition-colors active:scale-95"><Plus size={16}/> 加單</button>
+                                    <button onClick={()=>setIsEditingProduct(!isEditingProduct)} className={`text-sm px-4 py-3 rounded-xl flex gap-2 items-center font-bold transition-colors active:scale-95 ${isEditingProduct?'bg-[#AEC8DB] text-white shadow-lg shadow-[#AEC8DB]/20':'bg-cream-100 text-latte-600 hover:bg-cream-200'}`}><Edit size={16}/> {isEditingProduct ? '完成編輯' : '編輯商品'}</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Customer Detail Modal (顧客詳情) */}
+                    {selectedCustomerDetail && currentSelectedCustomer && (
+                        <div className="fixed inset-0 bg-latte-900/40 backdrop-blur-[2px] z-[160] flex items-end md:items-center justify-center p-0 md:p-4">
+                            <div className="bg-white rounded-t-[30px] md:rounded-3xl w-full max-w-md h-[85vh] flex flex-col shadow-2xl animate-in">
+                                <div className="p-6 border-b border-cream-200 flex justify-between items-start bg-cream-50 rounded-t-[30px] md:rounded-t-3xl">
+                                    <div>
+                                        <h3 className="text-xl font-bold text-latte-800 flex items-center gap-2"><User size={20}/> {currentSelectedCustomer.name}</h3>
+                                        <div className="text-xs text-latte-500 font-bold mt-2 bg-white px-2 py-1 rounded-lg border border-cream-200 inline-block shadow-sm">總額: ${currentSelectedCustomer.totalSpent.toLocaleString()}</div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={()=>handleCopyOrderText(currentSelectedCustomer)} className="p-2.5 bg-white border border-cream-200 rounded-xl flex gap-1 text-xs items-center font-bold text-latte-600 shadow-sm active:scale-95 hover:bg-cream-50" title="複製文字"><ClipboardList size={18}/> 文案</button>
+                                        <button onClick={()=>handleExportToImage(currentSelectedCustomer)} className="p-2.5 bg-white border border-cream-200 rounded-xl flex gap-1 text-xs items-center font-bold text-latte-600 shadow-sm active:scale-95 hover:bg-cream-50" title="匯出圖片"><ImageIcon size={18}/> 存圖</button>
+                                        <button onClick={()=>{setProxyForm(prev=>({...prev,customer:currentSelectedCustomer.name}));setShowProxyOrder(true)}} className="p-2.5 bg-[#AEC8DB] text-white rounded-xl shadow-md shadow-[#AEC8DB]/20 active:scale-95 hover:brightness-105"><Plus size={18}/></button>
+                                        <button onClick={()=>setSelectedCustomerDetail(null)} className="p-2.5 bg-cream-200 text-latte-600 rounded-xl active:scale-95 hover:bg-cream-300"><X size={18}/></button>
+                                    </div>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                    {currentSelectedCustomer.items.map((item,idx)=>(
+                                        <div key={idx} className="flex justify-between items-center p-4 bg-white border border-cream-200 rounded-2xl shadow-sm hover:border-latte-200 transition-colors">
+                                            <div><div className="font-bold text-sm text-latte-800">{item.name}</div><div className="text-xs text-latte-400 mt-1 font-bold">{item.variant} · ${item.finalPrice}</div></div>
+                                            <div className="text-right flex items-center gap-2 justify-end">
+                                                <div className="bg-cream-50 px-2 py-1 rounded-lg border border-cream-100 flex items-center gap-1">
+                                                    <span className="text-xs text-latte-400">x</span>
+                                                    {editingOrderQtyId===`${item.orderId}-${item.productId}` ? 
+                                                        <input autoFocus className="w-8 text-center border-b border-latte-500 outline-none bg-transparent font-bold text-latte-800" defaultValue={item.qty} onBlur={e=>handleUpdateOrderQty(item.orderId,item.productId,e.target.value)}/> :
+                                                        <span onClick={()=>setEditingOrderQtyId(`${item.orderId}-${item.productId}`)} className="font-bold cursor-pointer text-latte-800 hover:text-latte-500">{item.qty}</span>
+                                                    }
+                                                </div>
+                                                <div className="text-sm text-latte-600 font-black min-w-[3rem] text-right">${item.itemTotal}</div>
+                                                <button onClick={()=>handleDeleteOrderItem(item.orderId,item.productId)} className="ml-1 text-cream-300 hover:text-rose-500 transition-colors p-1"><Trash2 size={16}/></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Arrival Check Modal (出貨檢核) */}
+                    {currentSelectedArrivalCustomer && (
+                        <div className="fixed inset-0 bg-latte-900/40 backdrop-blur-[2px] z-[150] flex items-end md:items-center justify-center p-0 md:p-4">
+                            <div className="bg-white rounded-t-[30px] md:rounded-3xl w-full max-w-md h-[85vh] flex flex-col shadow-2xl animate-in">
+                                <div className="p-6 bg-latte-800 text-cream-100 rounded-t-[30px] md:rounded-t-3xl flex justify-between items-start shrink-0 shadow-lg">
+                                    <div><h3 className="text-xl font-bold flex items-center gap-2"><Truck size={20}/> {currentSelectedArrivalCustomer.name}</h3><p className="text-xs opacity-70 mt-1 font-bold tracking-wide">{isArrivalShipped ? '已出貨歸檔' : '配貨出貨檢核'}</p></div>
+                                    <button onClick={()=>setSelectedArrivalCustomer(null)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors"><X size={18}/></button>
+                                </div>
+                                <div className="px-6 py-4 bg-latte-700 text-white flex justify-between items-center shrink-0 border-b border-latte-600">
+                                    <div className="text-xs opacity-90 font-bold">進度: {currentSelectedArrivalCustomer.items.filter(i=>(i.allocatedQty||0)>=i.qty).length} / {currentSelectedArrivalCustomer.items.length} 項</div>
+                                    {!isArrivalShipped && currentSelectedArrivalCustomer.isFullyArrived && <button onClick={()=>handleShipCustomer(currentSelectedArrivalCustomer.name)} className="bg-emerald-500 px-4 py-1.5 rounded-xl text-xs font-bold flex gap-1 shadow-lg shadow-emerald-500/30 animate-pulse hover:scale-105 transition-transform"><Truck size={14}/> 確認出貨</button>}
+                                    {isArrivalShipped && <button onClick={()=>handleUnshipCustomer(currentSelectedArrivalCustomer.name)} className="bg-amber-500 px-4 py-1.5 rounded-xl text-xs font-bold flex gap-1 shadow-lg shadow-amber-500/30 active:scale-95"><Undo2 size={14}/> 回復未出貨</button>}
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-cream-50">
+                                    {currentSelectedArrivalCustomer.items.map((item,idx)=>{
+                                        const isDone = (item.allocatedQty||0) >= item.qty;
+                                        return (
+                                            <div key={idx} className={`flex justify-between items-center p-3 border rounded-2xl shadow-sm transition-all ${isDone?'bg-emerald-50 border-emerald-200':'bg-white border-cream-200'} ${isArrivalShipped?'opacity-70 grayscale-[0.3]':''}`}>
+                                                <div className="flex items-center gap-3 flex-1">
+                                                    {!isArrivalShipped ? (
+                                                        <button onClick={()=>toggleAllocation(item.orderId,item.productId,item.allocatedQty||0,item.qty)} className={`w-8 h-8 rounded-xl border flex items-center justify-center transition-all active:scale-90 ${isDone?'bg-emerald-500 border-emerald-500 text-white shadow-md shadow-emerald-200':'border-cream-300 text-transparent hover:border-latte-400'}`}><CheckSquare size={16}/></button>
+                                                    ) : <div className="w-8 h-8 flex items-center justify-center bg-gray-200 rounded-xl text-gray-500"><PackageCheck size={16}/></div>}
+                                                    <div><div className="font-bold text-sm text-latte-800">{item.name}</div><div className="text-[10px] text-latte-400 font-bold">{item.variant}</div></div>
+                                                </div>
+                                                <div className="flex items-center gap-1 text-sm bg-white/50 px-2 py-1.5 rounded-xl border border-transparent">
+                                                    <span className="text-xs text-latte-400 font-bold">配</span>
+                                                    {!isArrivalShipped && editingAllocatedQtyId===`${item.orderId}-${item.productId}-arrival` ?
+                                                        <input autoFocus className="w-8 text-center border-b border-emerald-500 outline-none bg-transparent font-bold text-emerald-700" defaultValue={item.allocatedQty||0} onBlur={e=>handleUpdateAllocatedQty(item.orderId,item.productId,e.target.value)}/> :
+                                                        <span onClick={()=>!isArrivalShipped && setEditingAllocatedQtyId(`${item.orderId}-${item.productId}-arrival`)} className={`font-black text-lg ${isDone?'text-emerald-500':'text-latte-300'} ${!isArrivalShipped && 'cursor-pointer hover:bg-cream-100 px-1 rounded'}`}>{item.allocatedQty||0}</span>
+                                                    }
+                                                    <span className="text-xs text-latte-300 font-bold">/</span>
+                                                    <span className="text-xs text-latte-400 font-bold">訂</span>
+                                                    {!isArrivalShipped && editingOrderQtyId===`${item.orderId}-${item.productId}-arrival` ?
+                                                        <input autoFocus className="w-8 text-center border-b border-latte-500 outline-none bg-transparent font-bold text-latte-800" defaultValue={item.qty} onBlur={e=>handleUpdateOrderQty(item.orderId,item.productId,e.target.value)}/> :
+                                                        <span onClick={()=>!isArrivalShipped && setEditingOrderQtyId(`${item.orderId}-${item.productId}-arrival`)} className="font-bold cursor-pointer text-latte-800 hover:bg-cream-100 px-1 rounded">{item.qty}</span>
+                                                    }
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
