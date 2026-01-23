@@ -146,7 +146,8 @@
             X, ChevronRight, ChevronUp, ClipboardList, User, ShoppingBag, ListOrdered, Tag, 
             Layers, Archive, CheckSquare, Square, Trash2, Edit, Save, Copy, CreditCard, 
             RotateCcw, Minus, TrendingUp, Wallet, BoxSelect, Undo2, PackageCheck, FileSpreadsheet,
-            Image as ImageIcon, Download, Loader2, Upload, Cloud, Settings, UploadCloud, DownloadCloud, FileJson
+            Image as ImageIcon, Download, Loader2, Upload, Cloud, Settings, UploadCloud, DownloadCloud, FileJson,
+            Database, RefreshCw, AlertTriangle
         } from 'https://esm.sh/lucide-react@0.263.1?dev';
 
         const App = () => {
@@ -377,6 +378,7 @@
                                 setProducts(data.products);
                                 setOrders(data.orders);
                                 notify("資料還原成功！");
+                                setShowSettings(false); // 關閉設定選單
                             }
                         } else {
                             notify("無效的備份檔案格式");
@@ -485,6 +487,7 @@
                     setProducts([]);
                     setOrders([]);
                     notify("系統資料已全部清除");
+                    setShowSettings(false);
                 }
             };
 
@@ -656,6 +659,7 @@
                     {/* Header (頂部標題) */}
                     <div className="bg-latte-500 text-cream-50 p-4 shadow-sm sticky top-0 z-50 flex justify-between items-center max-w-2xl mx-auto shadow-latte-200">
                         <h1 className="text-xl font-bold flex items-center gap-2 cursor-pointer" onClick={() => navigateTo('dashboard')}><Zap className="fill-cream-100 text-cream-100" /> Cuibo WMS</h1>
+                        <button onClick={() => setShowSettings(true)} className="p-2 rounded-full hover:bg-latte-600 transition-colors active:scale-95"><Settings size={22} className="text-cream-50"/></button>
                     </div>
 
                     {/* Nav (分頁導航) */}
@@ -672,20 +676,7 @@
                         {/* 搜尋列 */}
                         {activeTab !== 'dashboard' && <div className="relative"><input type="text" placeholder="搜尋商品、顧客..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-cream-50 text-latte-800 rounded-2xl p-4 pl-12 shadow-inner-soft outline-none border border-transparent focus:border-latte-300 transition-all placeholder:text-latte-300" /><Search size={18} className="absolute left-4 top-4 text-latte-300" /></div>}
                         
-                        {/* 側邊工具列 (Sidebar Backup Buttons) - 保持指定顏色但優化外觀 */}
-                        <div className="flex gap-2 overflow-x-auto pb-2 px-1 scrollbar-hide">
-                             <button onClick={()=>setShowSettings(true)} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm active:scale-95 transition-transform"><Settings size={14}/> API 設定</button>
-                             <button onClick={handleCloudUpload} disabled={isSyncing} className={`bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm shadow-indigo-200 active:scale-95 transition-transform ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''}`}><Cloud size={14}/> {isSyncing ? '上傳中...' : '上傳雲端'}</button>
-                             <button onClick={handleCloudDownload} disabled={isSyncing} className={`bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm shadow-emerald-200 active:scale-95 transition-transform ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''}`}><Download size={14}/> {isSyncing ? '同步中...' : '雲端同步'}</button>
-                             <div className="w-px bg-latte-300 mx-1 shrink-0 h-6 self-center opacity-50"></div>
-                             <button onClick={handleExportBackup} className="bg-slate-700 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm active:scale-95 transition-transform"><Download size={14}/> 備份檔案</button>
-                             <label className="bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs flex items-center gap-1 cursor-pointer shrink-0 font-bold shadow-sm active:scale-95 transition-transform">
-                                <Upload size={14}/> 還原檔案
-                                <input type="file" ref={fileInputRef} onChange={handleImportBackup} accept=".json" className="hidden" />
-                             </label>
-                             <div className="w-px bg-latte-300 mx-1 shrink-0 h-6 self-center opacity-50"></div>
-                             <button onClick={handleClearData} className="bg-rose-600 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm shadow-rose-200 active:scale-95 transition-transform"><Trash2 size={14}/> 清除重置</button>
-                        </div>
+                        {/* 舊的側邊工具列已移除，整合進設定齒輪中 */}
 
                         {/* Products List */}
                         {activeTab === 'products' && filteredGroupedProducts.map(g => (
@@ -817,16 +808,65 @@
 
                     {/* --- Modals (彈出視窗) --- */}
                     
-                    {/* Settings Modal */}
+                    {/* Unified Settings Modal (整合式設定選單) */}
                     {showSettings && (
                         <div className="fixed inset-0 bg-latte-900/40 backdrop-blur-[2px] z-[200] flex items-center justify-center p-4">
-                            <div className="bg-white rounded-3xl w-full max-w-md p-6 space-y-4 shadow-2xl animate-in">
-                                <h3 className="font-bold border-b border-cream-200 pb-3 text-latte-800 text-lg">API 設定</h3>
-                                <p className="text-sm text-latte-500">請輸入 Google Apps Script 網頁應用程式網址</p>
-                                <input type="text" placeholder="https://script.google.com/..." className="w-full bg-cream-50 border border-cream-200 p-4 rounded-xl focus:border-latte-400 outline-none text-latte-800 shadow-inner-soft" value={apiUrl} onChange={e=>setApiUrl(e.target.value)}/>
-                                <div className="flex gap-3 pt-2">
-                                    <button onClick={()=>setShowSettings(false)} className="flex-1 bg-[#AEC8DB] text-white py-3 rounded-xl font-bold shadow-lg shadow-[#AEC8DB]/20 active:scale-95 transition-transform">儲存</button>
-                                    <button onClick={()=>setShowSettings(false)} className="flex-1 bg-cream-100 text-latte-500 py-3 rounded-xl font-bold hover:bg-cream-200 active:scale-95 transition-transform">取消</button>
+                            <div className="bg-white rounded-3xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl animate-in overflow-hidden">
+                                <div className="p-5 border-b border-cream-200 flex justify-between items-center bg-cream-50">
+                                    <h3 className="font-bold text-latte-800 text-lg flex items-center gap-2"><Settings size={20}/> 系統設定</h3>
+                                    <button onClick={()=>setShowSettings(false)} className="w-8 h-8 rounded-full bg-cream-200 text-latte-500 flex items-center justify-center hover:bg-latte-200"><X size={18}/></button>
+                                </div>
+                                
+                                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                                    {/* 1. API 設定區塊 */}
+                                    <div className="space-y-3">
+                                        <h4 className="text-sm font-bold text-latte-500 flex items-center gap-2"><Database size={16}/> API 連線設定 (Google Apps Script)</h4>
+                                        <input type="text" placeholder="https://script.google.com/..." className="w-full bg-cream-50 border border-cream-200 p-3 rounded-xl focus:border-latte-400 outline-none text-latte-800 text-sm shadow-inner-soft" value={apiUrl} onChange={e=>setApiUrl(e.target.value)}/>
+                                        <p className="text-[10px] text-latte-400">用於雲端備份與還原功能，請填寫發布後的 Web App URL。</p>
+                                    </div>
+
+                                    <hr className="border-cream-200 border-dashed"/>
+
+                                    {/* 2. 雲端同步功能 */}
+                                    <div className="space-y-3">
+                                        <h4 className="text-sm font-bold text-latte-500 flex items-center gap-2"><Cloud size={16}/> 雲端資料同步</h4>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <button onClick={handleCloudUpload} disabled={isSyncing} className={`bg-indigo-600 text-white p-3 rounded-xl text-sm flex flex-col items-center justify-center gap-1 font-bold shadow-sm shadow-indigo-200 active:scale-95 transition-all ${isSyncing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-indigo-700'}`}>
+                                                {isSyncing ? <Loader2 size={20} className="animate-spin"/> : <UploadCloud size={20}/>} 
+                                                <span>{isSyncing ? '處理中...' : '上傳備份'}</span>
+                                            </button>
+                                            <button onClick={handleCloudDownload} disabled={isSyncing} className={`bg-emerald-600 text-white p-3 rounded-xl text-sm flex flex-col items-center justify-center gap-1 font-bold shadow-sm shadow-emerald-200 active:scale-95 transition-all ${isSyncing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-emerald-700'}`}>
+                                                {isSyncing ? <Loader2 size={20} className="animate-spin"/> : <DownloadCloud size={20}/>} 
+                                                <span>{isSyncing ? '處理中...' : '下載還原'}</span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <hr className="border-cream-200 border-dashed"/>
+
+                                    {/* 3. 本機檔案功能 */}
+                                    <div className="space-y-3">
+                                        <h4 className="text-sm font-bold text-latte-500 flex items-center gap-2"><FileJson size={16}/> 本機檔案備份</h4>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <button onClick={handleExportBackup} className="bg-slate-700 text-white p-3 rounded-xl text-sm flex flex-col items-center justify-center gap-1 font-bold shadow-sm hover:bg-slate-800 active:scale-95 transition-all">
+                                                <Download size={20}/> 下載 JSON 檔
+                                            </button>
+                                            <label className="bg-slate-200 text-slate-700 p-3 rounded-xl text-sm flex flex-col items-center justify-center gap-1 font-bold shadow-sm cursor-pointer hover:bg-slate-300 active:scale-95 transition-all">
+                                                <Upload size={20}/> 
+                                                <span>匯入 JSON 檔</span>
+                                                <input type="file" ref={fileInputRef} onChange={handleImportBackup} accept=".json" className="hidden" />
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <hr className="border-cream-200 border-dashed"/>
+
+                                    {/* 4. 危險操作區 */}
+                                    <div className="pt-2">
+                                        <button onClick={handleClearData} className="w-full bg-rose-50 text-rose-600 border border-rose-200 p-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-rose-100 active:scale-95 transition-all">
+                                            <AlertTriangle size={18}/> 清除所有資料 (重置系統)
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -945,7 +985,7 @@
                                                           onBlur={(e) => {
                                                             const firstP = products.find(p => p.name === selectedGroupName);
                                                             if(firstP) handleUpdateProductInfo(firstP.id, 'tierPrice', e.target.value);
-                                                         }}
+                                                          }}
                                                      />
                                                 </div>
                                             </div>
