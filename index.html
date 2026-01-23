@@ -150,7 +150,7 @@
         } from 'https://esm.sh/lucide-react@0.263.1?dev';
 
         const App = () => {
-            // --- 核心邏輯保持不變 ---
+            // --- 核心邏輯 ---
             
             // 1. 資料讀取與狀態
             const loadLocal = (key, def) => {
@@ -349,7 +349,6 @@
             const filteredPendingArrivals = pendingArrivals.filter(c => c.name.includes(searchQuery));
             const filteredShippedArrivals = shippedArrivals.filter(c => c.name.includes(searchQuery));
             
-            // --- 優化後的款式建議邏輯 (Smart Variants) ---
             const availableVariants = useMemo(() => {
                 const exactMatch = products.filter(p => p.name === proxyForm.productName);
                 if (exactMatch.length > 0) {
@@ -405,7 +404,6 @@
                 } catch (err) { console.error(err); notify("匯出失敗"); } finally { setExportTargetCustomer(null); }
             };
 
-            // 複製訂單文案函式
             const handleCopyOrderText = (customer) => {
                 if (!customer) return;
                 let text = `親愛的 ${customer.name} 您好，\n`;
@@ -423,7 +421,7 @@
                 text += `₊⊹ 若是沒有漏掉的商品 ₊⊹\n`;
                 text += `₊⊹ 若是還有扭蛋 ₊⊹\n`;
                 text += `請等我第二個通知\n`;
-               
+                
                 text += `網址：（這裡留給我自己輸入網址）\n`;
                 text += `找到自己名字後完成下單就可以嚕\n`;
                 text += `𐙚 收到所有連結後請盡速完成付款\n`;
@@ -447,7 +445,6 @@
                 document.body.removeChild(textArea);
             };
 
-            // 批次匯出圖片邏輯
             const handleBatchExportImages = async () => {
                 if (batchSelection.size === 0) return notify("請先勾選顧客");
                 
@@ -535,8 +532,64 @@
             const handleUnshipCustomer = (name) => { if(confirm("回復未出貨?")) { setOrders(prev=>prev.map(o=>o.customer===name&&o.status==='已出貨'?{...o,status:'待結單'}:o)); setSelectedArrivalCustomer(null); } };
             const handleAddOrder = () => { const { productName, variant, price, customer, qty, purchasedQty } = proxyForm; if (!productName || !price) { notify('請填寫完整'); return; } const q = parseInt(qty)||1; const pq = parseInt(purchasedQty)||0; const fp = parseInt(price)||0; let target = products.find(p=>p.name===productName && p.variant===variant); let pid = target?.id; if(!target) { pid = Date.now().toString(); setProducts(prev=>[...prev, {id:pid, name:productName, variant:variant||'單一款式', price:fp, spot:pq, tierMinQty:0, tierPrice:0}]); } else if(pq>0) { setProducts(prev=>prev.map(p=>p.id===pid?{...p,spot:(p.spot||0)+pq}:p)); } if(customer) { setOrders(prev=>[...prev, { id: Date.now().toString()+Math.random(), customer, total:fp*q, paid:0, status:'待結單', items:[{productId:pid, name:productName, variant:variant||'單一款式', qty:q, price:fp, allocatedQty:0}], debt:0, unclaimed:0 }]); notify("已加單"); } else { notify("已入庫"); } setShowProxyOrder(false); setProxyForm({ productName: '', variant: '', price: '', customer: '', qty: 1, purchasedQty: 0 }); };
             
-            const handleCloudUpload = async () => { if(!apiUrl) { notify("請設定API"); return; } setIsSyncing(true); try { await fetch(apiUrl, { method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'}, body:JSON.stringify({products,orders}) }); notify("上傳成功"); } catch(e) { notify("上傳失敗"); } finally { setIsSyncing(false); } };
-            const handleCloudDownload = async () => { if(!apiUrl) { notify("請設定API"); return; } setIsSyncing(true); try { const res = await fetch(apiUrl); const data = await res.json(); if(data.products){ if(confirm("覆蓋資料?")){ setProducts(data.products); setOrders(data.orders); notify("下載成功"); } } } catch(e) { notify("下載失敗"); } finally { setIsSyncing(false); } };
+            // --- 修正後的雲端備份與還原功能 ---
+            const handleCloudUpload = async () => {
+                if (!apiUrl) {
+                    notify("請設定 API");
+                    return;
+                }
+                setIsSyncing(true);
+                try {
+                    // 使用標準 POST 請求發送 JSON 字串，內容類型設為 text/plain 避免 CORS 預檢
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        body: JSON.stringify({ products, orders })
+                    });
+
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    
+                    const result = await response.json();
+                    if (result.status === 'success') {
+                        notify("☁️ 備份成功！");
+                    } else {
+                        throw new Error(result.message || 'Unknown error');
+                    }
+                } catch (e) {
+                    console.error(e);
+                    notify("❌ 上傳失敗: " + e.message);
+                } finally {
+                    setIsSyncing(false);
+                }
+            };
+
+            const handleCloudDownload = async () => {
+                if (!apiUrl) {
+                    notify("請設定 API");
+                    return;
+                }
+                setIsSyncing(true);
+                try {
+                    const res = await fetch(apiUrl);
+                    if (!res.ok) throw new Error('Network response was not ok');
+                    
+                    const data = await res.json();
+                    
+                    if (data && (data.products || data.orders)) {
+                        if (confirm(`雲端發現備份資料！\n確定要覆蓋目前的資料嗎？\n(本機資料將會遺失)`)) {
+                            setProducts(data.products || []);
+                            setOrders(data.orders || []);
+                            notify("☁️ 下載並還原成功");
+                        }
+                    } else {
+                        notify("雲端尚無資料");
+                    }
+                } catch (e) {
+                    console.error(e);
+                    notify("❌ 下載失敗");
+                } finally {
+                    setIsSyncing(false);
+                }
+            };
             
             const currentSelectedCustomer = selectedCustomerDetail ? customerList.find(c => c.name === selectedCustomerDetail.name) : null;
             const currentSelectedArrivalCustomer = selectedArrivalCustomer ? (selectedArrivalCustomer.source === 'shipped' ? shippedArrivals.find(c => c.name === selectedArrivalCustomer.name) : pendingArrivals.find(c => c.name === selectedArrivalCustomer.name)) || selectedArrivalCustomer : null;
@@ -622,8 +675,8 @@
                         {/* 側邊工具列 (Sidebar Backup Buttons) - 保持指定顏色但優化外觀 */}
                         <div className="flex gap-2 overflow-x-auto pb-2 px-1 scrollbar-hide">
                              <button onClick={()=>setShowSettings(true)} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm active:scale-95 transition-transform"><Settings size={14}/> API 設定</button>
-                             <button onClick={handleCloudUpload} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm shadow-indigo-200 active:scale-95 transition-transform"><Cloud size={14}/> 上傳雲端</button>
-                             <button onClick={handleCloudDownload} className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm shadow-emerald-200 active:scale-95 transition-transform"><Download size={14}/> 雲端同步</button>
+                             <button onClick={handleCloudUpload} disabled={isSyncing} className={`bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm shadow-indigo-200 active:scale-95 transition-transform ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''}`}><Cloud size={14}/> {isSyncing ? '上傳中...' : '上傳雲端'}</button>
+                             <button onClick={handleCloudDownload} disabled={isSyncing} className={`bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm shadow-emerald-200 active:scale-95 transition-transform ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''}`}><Download size={14}/> {isSyncing ? '同步中...' : '雲端同步'}</button>
                              <div className="w-px bg-latte-300 mx-1 shrink-0 h-6 self-center opacity-50"></div>
                              <button onClick={handleExportBackup} className="bg-slate-700 text-white px-4 py-2 rounded-xl text-xs flex items-center gap-1 shrink-0 font-bold shadow-sm active:scale-95 transition-transform"><Download size={14}/> 備份檔案</button>
                              <label className="bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs flex items-center gap-1 cursor-pointer shrink-0 font-bold shadow-sm active:scale-95 transition-transform">
@@ -880,8 +933,8 @@
                                                      <input type="number" className="w-full p-2 rounded-lg border border-cream-200 bg-white text-center font-bold text-latte-800 outline-none focus:border-[#AEC8DB]" placeholder="0" 
                                                          defaultValue={products.find(p => p.name === selectedGroupName)?.tierMinQty || 0}
                                                          onBlur={(e) => {
-                                                             const firstP = products.find(p => p.name === selectedGroupName);
-                                                             if(firstP) handleUpdateProductInfo(firstP.id, 'tierMinQty', e.target.value);
+                                                            const firstP = products.find(p => p.name === selectedGroupName);
+                                                            if(firstP) handleUpdateProductInfo(firstP.id, 'tierMinQty', e.target.value);
                                                          }}
                                                      />
                                                 </div>
@@ -890,8 +943,8 @@
                                                      <input type="number" className="w-full p-2 rounded-lg border border-cream-200 bg-white text-center font-bold text-latte-800 outline-none focus:border-[#AEC8DB]" placeholder="0" 
                                                          defaultValue={products.find(p => p.name === selectedGroupName)?.tierPrice || 0}
                                                           onBlur={(e) => {
-                                                             const firstP = products.find(p => p.name === selectedGroupName);
-                                                             if(firstP) handleUpdateProductInfo(firstP.id, 'tierPrice', e.target.value);
+                                                            const firstP = products.find(p => p.name === selectedGroupName);
+                                                            if(firstP) handleUpdateProductInfo(firstP.id, 'tierPrice', e.target.value);
                                                          }}
                                                      />
                                                 </div>
@@ -1020,7 +1073,7 @@
                                             <div key={idx} className={`flex justify-between items-center p-3 border rounded-2xl shadow-sm transition-all ${isDone?'bg-emerald-50 border-emerald-200':'bg-white border-cream-200'} ${isArrivalShipped?'opacity-70 grayscale-[0.3]':''}`}>
                                                 <div className="flex items-center gap-3 flex-1">
                                                     {!isArrivalShipped ? (
-                                                        <button onClick={()=>toggleAllocation(item.orderId,item.productId,item.allocatedQty||0,item.qty)} className={`w-8 h-8 rounded-xl border flex items-center justify-center transition-all active:scale-90 ${isDone?'bg-emerald-500 border-emerald-500 text-white shadow-md shadow-emerald-200':'border-cream-300 text-transparent hover:border-latte-400'}`}><CheckSquare size={16}/></button>
+                                                        <button onClick={()=>toggleAllocation(item.orderId,item.productId,item.allocatedQty||0,item.qty)} className={`w-8 h-8 rounded-xl border flex items-center justify-center transition-all active:scale-90 ${isDone?'bg-emerald-50 border-emerald-500 text-white shadow-md shadow-emerald-200':'border-cream-300 text-transparent hover:border-latte-400'}`}><CheckSquare size={16}/></button>
                                                     ) : <div className="w-8 h-8 flex items-center justify-center bg-gray-200 rounded-xl text-gray-500"><PackageCheck size={16}/></div>}
                                                     <div><div className="font-bold text-sm text-latte-800">{item.name}</div><div className="text-[10px] text-latte-400 font-bold">{item.variant}</div></div>
                                                 </div>
@@ -1054,6 +1107,3 @@
     </script>
 </body>
 </html>
-
-
-
